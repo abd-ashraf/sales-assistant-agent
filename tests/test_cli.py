@@ -59,3 +59,22 @@ def test_check_reads_the_key_from_a_dotenv_file(workdir: Path) -> None:
     result = runner.invoke(app, ["check"])
 
     assert result.exit_code == 0
+
+
+@pytest.mark.usefixtures("brochures_folder")
+def test_ingest_saves_the_pages_and_lists_each_brochure(workdir: Path) -> None:
+    result = runner.invoke(app, ["ingest"])
+
+    assert result.exit_code == 0
+    assert "larox-pf-ds" in result.output
+    assert "3 pages saved" in result.output
+    saved = (workdir / ".cache" / "pages.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(saved) == 3
+
+
+@pytest.mark.usefixtures("workdir")
+def test_ingest_stops_with_a_clear_message_when_there_are_no_brochures() -> None:
+    result = runner.invoke(app, ["ingest"])
+
+    assert result.exit_code == 1
+    assert "No brochure PDFs found" in result.output

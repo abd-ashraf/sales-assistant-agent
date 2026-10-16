@@ -13,6 +13,9 @@ it says so when the answer is not in its data.
 ## What works so far
 
 - Project skeleton: installs, lints and tests; `check` verifies the setup.
+- Brochures read page by page with `ingest`: 73 clean pages, each tagged with its
+  brochure, page and year. The PDF reader was picked by comparing six
+  ([measurements](docs/TRACKER.md#measurements)).
 
 The full plan, ticked off step by step: [docs/TRACKER.md](docs/TRACKER.md).
 
@@ -26,6 +29,7 @@ repository), or point `DATA_DIR` in `.env` at it.
 uv sync
 cp .env.example .env              # then add your OPENAI_API_KEY
 uv run sales-assistant check      # checks the data folder and the key
+uv run sales-assistant ingest     # reads the brochures into .cache/
 ```
 
 ## Development

@@ -7,11 +7,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ENV_FILE = Path(".env")
+CACHE_DIR = Path(".cache")
 DEFAULT_DATA_DIR = "data"
 DEFAULT_OPENAI_MODEL = "gpt-6-luna"
 
-# What the assignment's data folder must contain.
-EXPECTED_DATA = ("brochures", "HistoricalServices", "flotation_process_data_hourly.csv")
+BROCHURES_DIR = "brochures"
+SERVICE_REPORTS_DIR = "HistoricalServices"
+FLOTATION_CSV = "flotation_process_data_hourly.csv"
+EXPECTED_DATA = (BROCHURES_DIR, SERVICE_REPORTS_DIR, FLOTATION_CSV)
 
 
 @dataclass(frozen=True)

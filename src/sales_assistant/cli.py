@@ -1,12 +1,15 @@
 """Command-line entry point: `sales-assistant <command>`."""
 
 from importlib.metadata import version
+from itertools import groupby
 from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.table import Table
 
-from sales_assistant.config import EXPECTED_DATA, load_settings
+from sales_assistant.brochures import PAGES_FILE, BrochureError, read_brochures, save_pages
+from sales_assistant.config import BROCHURES_DIR, CACHE_DIR, EXPECTED_DATA, load_settings
 
 APP_HELP = "Sales assistant for Metso field sales: products, service costs, flotation data."
 
@@ -49,3 +52,23 @@ def check() -> None:
 
     if missing or not settings.has_openai_key:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def ingest() -> None:
+    """Read the brochures into clean pages and save them in the cache folder."""
+    settings = load_settings()
+    try:
+        pages = read_brochures(settings.data_dir / BROCHURES_DIR)
+    except BrochureError as error:
+        console.print(f"[red]{error}[/]")
+        raise typer.Exit(code=1) from error
+    pages_path = CACHE_DIR / PAGES_FILE
+    save_pages(pages, pages_path)
+
+    table = Table("Brochure", "Year", "Pages")
+    for brochure, group in groupby(pages, key=lambda page: page.brochure):
+        brochure_pages = list(group)
+        table.add_row(brochure, str(brochure_pages[0].year or "-"), str(len(brochure_pages)))
+    console.print(table)
+    console.print(f"{len(pages)} pages saved to {pages_path}")

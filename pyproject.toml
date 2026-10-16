@@ -5,6 +5,7 @@ description = "Command-line sales assistant agent: product answers from brochure
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "pypdfium2==5.14.0",     # reads the brochure PDFs
     "python-dotenv==1.2.4",  # reads settings from .env
     "rich==15.0.0",          # terminal output
     "typer==0.27.3",         # command-line interface
@@ -37,3 +38,7 @@ no-docstring-rgx = "^(_|test_)"  # test names already say what they check
 [tool.mypy]
 strict = true
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["pypdfium2", "pypdfium2.*"]
+ignore_missing_imports = true  # pypdfium2 ships no type information mypy can use
