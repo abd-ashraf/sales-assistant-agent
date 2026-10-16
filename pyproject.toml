@@ -1,0 +1,39 @@
+[project]
+name = "sales-assistant"
+version = "0.1.0"
+description = "Command-line sales assistant agent: product answers from brochures, service cost estimates from past visits, flotation data checks."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "python-dotenv==1.2.4",  # reads settings from .env
+    "rich==15.0.0",          # terminal output
+    "typer==0.27.3",         # command-line interface
+]
+
+[project.scripts]
+sales-assistant = "sales_assistant.cli:app"
+
+[dependency-groups]
+dev = [
+    "mypy==2.4.0",
+    "pylint==4.1.3",
+    "pytest==9.1.1",
+    "ruff==0.17.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100  # pylint's default, so both linters agree
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pylint.basic]
+no-docstring-rgx = "^(_|test_)"  # test names already say what they check
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]

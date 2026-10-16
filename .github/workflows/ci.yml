@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Install from the lock file
+        run: uv sync --locked
+      - name: Lint (ruff)
+        run: uv run ruff check
+      - name: Lint (pylint)
+        run: uv run pylint src tests
+      - name: Format
+        run: uv run ruff format --check
+      - name: Types
+        run: uv run mypy
+      - name: Tests
+        run: uv run pytest

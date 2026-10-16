@@ -1,0 +1,21 @@
+# Assignment material and private notes: not for a public repo
+data/
+candidate-brief.md
+notes/
+
+# Secrets
+.env
+
+# Built by the app (ingest results, scenario transcripts)
+.cache/
+
+# Python and tools
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
