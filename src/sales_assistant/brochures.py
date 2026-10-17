@@ -65,3 +65,11 @@ def save_pages(pages: list[Page], path: Path) -> None:
     with path.open("w", encoding="utf-8", newline="\n") as file:
         for page in pages:
             file.write(json.dumps(asdict(page), ensure_ascii=False) + "\n")
+
+
+def load_pages(path: Path) -> list[Page]:
+    """Read the pages that `save_pages` wrote to `path`."""
+    if not path.exists():
+        raise BrochureError(f"No prepared pages at {path}: run `sales-assistant ingest` first")
+    with path.open(encoding="utf-8") as file:
+        return [Page(**json.loads(line)) for line in file]

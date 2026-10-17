@@ -34,7 +34,7 @@ tool, and it says so when the answer is not in its data.
 ### 1. Product questions
 
 - [x] Read the brochures page by page
-- [ ] Search the brochures by keyword
+- [x] Search the brochures by keyword
 - [ ] Answer product questions with a LangGraph agent
 - [ ] Trace agent turns in Langfuse
 
@@ -69,6 +69,8 @@ tool, and it says so when the answer is not in its data.
 | 13 Oct | Service costs computed in code from checked records | No invented or mis-added figures; every number traces to a report |
 | 16 Oct | pypdfium2 reads the brochure PDFs | Kept 14 of 15 spec-table rows intact (pypdf and PyMuPDF kept 15, with font warnings or an AGPL licence) and was the fastest of six readers, with a small install and a permissive licence ([Measurements](#measurements)) |
 | 16 Oct | Text clean-up only for what pypdfium2 outputs | Windows line breaks, icon glyphs that come out as control characters, and PDFium's mark for a hyphen at a line break; Unicode NFKC would turn "ColumnCell™" into "ColumnCellTM" |
+| 17 Oct | Our own BM25 (about 30 lines) rather than a library | Same results as rank_bm25 on 24 test questions, no extra dependency, and every step of the scoring is visible ([Measurements](#measurements)) |
+| 17 Oct | No stemming; hyphenated codes split into words | Stemming found one more answer but pushed demo prompt 1's answer page from 1st to 5th; splitting lets "PF DS" find "PF-DS" at no measured cost |
 
 ## Measurements
 
@@ -97,3 +99,24 @@ Measured once with a local script, which is not part of the repository.
   tool's brochure filter is for.
 - Times come from one laptop run and vary between runs; install sizes were measured
   separately with `uv pip install --target`.
+
+### Search design (17 Oct)
+
+BM25 over the 73 pages, measured on 24 questions worded the way the agent might search,
+each with its known answer pages, plus 3 questions in a salesperson's own words.
+
+| Variant | Answer in top 5 | MRR | Demo prompt 1, raw words |
+| --- | --- | --- | --- |
+| rank_bm25 library | 22 of 24 | 0.91 | 1st |
+| **Own BM25, hyphens split (chosen)** | 22 of 24 | 0.91 | 1st |
+| Own BM25, hyphenated codes kept whole | 22 of 24 | 0.91 | 1st |
+| Own BM25 with stemming | 23 of 24 | 0.87 | 5th |
+| Own BM25 with the brochure name on every page | 22 of 24 | 0.90 | 1st |
+
+- All 3 questions in a salesperson's own words rank their answer page first.
+- The two misses: "weight of a tower press with 14 chambers" asks for a spec table that
+  shares few words with the question (7th; 2nd when the search is kept within
+  `larox-pf-ds`), and "number of filter plates in a PF 60", where every Larox PF spec page
+  shares those words (the answer pages come 6th and 7th).
+- A test on the real brochures fails if fewer than 22 of the 24 find their answer page in
+  the top 5, or if demo prompt 1's answer page stops coming first.

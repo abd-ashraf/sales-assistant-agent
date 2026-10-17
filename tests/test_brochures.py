@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from sales_assistant.brochures import BrochureError, find_year, read_brochures, save_pages
+from sales_assistant.brochures import (
+    BrochureError,
+    find_year,
+    load_pages,
+    read_brochures,
+    save_pages,
+)
 
 REAL_BROCHURES = Path(__file__).parents[1] / "data" / "brochures"
 
@@ -50,6 +56,21 @@ def test_save_pages_writes_one_json_object_per_line(brochures_folder: Path, tmp_
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert [row["page_number"] for row in rows] == [1, 2, 1]
     assert rows[1]["text"] == "Chambers 8 10 12\n© 2025 Metso"
+
+
+def test_load_pages_reads_back_what_save_pages_wrote(
+    brochures_folder: Path, tmp_path: Path
+) -> None:
+    pages = read_brochures(brochures_folder)
+    path = tmp_path / "cache" / "pages.jsonl"
+    save_pages(pages, path)
+
+    assert load_pages(path) == pages
+
+
+def test_load_pages_asks_for_ingest_when_nothing_was_saved(tmp_path: Path) -> None:
+    with pytest.raises(BrochureError, match="ingest"):
+        load_pages(tmp_path / "pages.jsonl")
 
 
 @pytest.mark.skipif(

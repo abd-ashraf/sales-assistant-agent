@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sales-assistant = "sales_assistant.cli:app"
+sales-assistant = "sales_assistant.cli:run"
 
 [dependency-groups]
 dev = [
