@@ -1,10 +1,10 @@
-"""A scripted chat model, so the agent can be tested without calling the API."""
+"""Stand-ins for outside services: a scripted chat model, and a recorder of traced turns."""
 
 from collections.abc import Callable, Sequence
 from itertools import count
 from typing import Any
 
-from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.callbacks import BaseCallbackHandler, CallbackManagerForLLMRun
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, BaseMessage
@@ -57,3 +57,17 @@ def tool_call(name: str, **args: Any) -> AIMessage:
     """A model reply that asks for one tool call."""
     call_id = f"call_{next(_call_ids)}"
     return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": call_id}])
+
+
+class TurnRecorder(BaseCallbackHandler):
+    """Keeps the metadata each turn starts with, as Langfuse's callback would receive it."""
+
+    def __init__(self) -> None:
+        self.turns: list[dict[str, Any]] = []
+
+    def on_chain_start(
+        self, serialized: dict[str, Any], inputs: dict[str, Any], **kwargs: Any
+    ) -> None:
+        """Record a turn when the graph itself starts, not each step inside it."""
+        if kwargs.get("parent_run_id") is None:
+            self.turns.append(kwargs.get("metadata") or {})

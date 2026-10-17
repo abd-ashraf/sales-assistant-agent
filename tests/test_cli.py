@@ -8,14 +8,21 @@ import pytest
 from langchain_core.messages import AIMessage
 from typer.testing import CliRunner
 
-from sales_assistant import cli
+from sales_assistant import cli, tracing
 from sales_assistant.brochures import PAGES_FILE, Page, save_pages
 from sales_assistant.cli import app, use_utf8_output
 from sales_assistant.config import EXPECTED_DATA
 from sales_assistant.product_cards import CARDS_FILE, ProductCard, load_cards, save_cards
-from tests.fakes import ScriptedChatModel, never_answering_model, scripted_model, tool_call
+from tests.fakes import (
+    ScriptedChatModel,
+    TurnRecorder,
+    never_answering_model,
+    scripted_model,
+    tool_call,
+)
 
 runner = CliRunner()
+LANGFUSE_URL = "http://localhost:3000"
 
 
 def make_data_folder(root: Path) -> None:
@@ -27,6 +34,13 @@ def make_data_folder(root: Path) -> None:
             (data / name).touch()
         else:
             (data / name).mkdir()
+
+
+def set_up_langfuse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Put the three Langfuse settings in the environment; no Langfuse server answers there."""
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    monkeypatch.setenv("LANGFUSE_BASE_URL", LANGFUSE_URL)
 
 
 def use_model(monkeypatch: pytest.MonkeyPatch, model: ScriptedChatModel) -> ScriptedChatModel:
@@ -81,7 +95,30 @@ def test_check_passes_when_data_and_key_are_present(
 
     assert result.exit_code == 0
     assert "missing" not in result.output
-    assert "not set" not in result.output
+    assert "OpenAI key: set" in result.output
+    assert "Langfuse: not set (optional" in result.output
+
+
+@pytest.mark.parametrize(
+    ("problem", "exit_code", "shown"),
+    [(None, 0, f"Langfuse: ok at {LANGFUSE_URL}"), ("not reachable", 1, "Langfuse: not reachable")],
+)
+def test_check_tests_langfuse_when_it_is_set_up(
+    workdir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    problem: str | None,
+    exit_code: int,
+    shown: str,
+) -> None:
+    make_data_folder(workdir)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    set_up_langfuse(monkeypatch)
+    monkeypatch.setattr(cli, "langfuse_problem", lambda: problem)
+
+    result = runner.invoke(app, ["check"])
+
+    assert result.exit_code == exit_code
+    assert shown in result.output
 
 
 @pytest.mark.usefixtures("workdir")
@@ -254,3 +291,19 @@ def test_chat_keeps_the_conversation_until_exit(monkeypatch: pytest.MonkeyPatch)
         "Which Larox model?",
         "A PF-DS",
     ]
+
+
+@pytest.mark.usefixtures("prepared")
+def test_chat_traces_each_turn_under_one_langfuse_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    set_up_langfuse(monkeypatch)
+    recorder = TurnRecorder()
+    monkeypatch.setattr(tracing, "CallbackHandler", lambda: recorder)
+    use_model(monkeypatch, scripted_model("First answer.", "Second answer."))
+
+    result = runner.invoke(app, ["chat"], input="First question\nSecond question\nexit\n")
+
+    assert result.exit_code == 0
+    assert len(recorder.turns) == 2
+    assert {turn["langfuse_trace_name"] for turn in recorder.turns} == {"chat"}
+    chat_thread = recorder.turns[0]["thread_id"]
+    assert {turn["langfuse_session_id"] for turn in recorder.turns} == {chat_thread}

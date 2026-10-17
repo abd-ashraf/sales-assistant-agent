@@ -36,7 +36,7 @@ tool, and it says so when the answer is not in its data.
 - [x] Read the brochures page by page
 - [x] Search the brochures by keyword
 - [x] Answer product questions with a LangGraph agent
-- [ ] Trace agent turns in Langfuse
+- [x] Trace agent turns in Langfuse
 
 ### 2. Service costs
 
@@ -74,6 +74,8 @@ tool, and it says so when the answer is not in its data.
 | 17 Oct | The model writes one card per brochure at ingest (product, kind, one sentence), copying the product name from the brochure's title | The agent learns which products exist without a hand-written list, and the two Larox PF editions print the same title, so they group as one product. Asking the model to reuse earlier names left them apart; asking "same product as one already described?" merged the PF-DS into them |
 | 17 Oct | The model picks the search's brochure filter from the cards | Spec tables share few words with a question: the 14-chamber question finds its page 2nd within `larox-pf-ds`, 7th over all brochures |
 | 17 Oct | At most 12 graph steps per question | Room for five rounds of tools and an answer; an even number, so a stopped turn still ends on tool results and the chat can go on |
+| 17 Oct | Tracing through Langfuse's LangChain callback, on only when its three settings are in `.env` | Records the graph, each step, every model call (prompt, tokens, cost) and every tool call without changing the graph; a chat's thread becomes its Langfuse session |
+| 17 Oct | `check` tests the Langfuse connection; `ask` and `chat` do not | With keys set but no server, a question still works but exits about 6 s later with one warning (measured); `check` finds that on demand without slowing every question |
 
 ## Limits and scale-up
 
@@ -97,6 +99,9 @@ Out of scope for this assignment, noted as they come up, with what would change.
 - **Users:** built for Metso's salespeople, so it shows internal data such as past costs. A
   public version would need sign-in, guardrails against prompt injection, and no internal
   cost data.
+- **Tracing:** one local Langfuse in Docker. A team would share one instance, attach
+  evaluation scores to traces and keep prompt versions in Langfuse's prompt registry.
+  Traces hold whole conversations, so they stay self-hosted or masked.
 
 ## Measurements
 

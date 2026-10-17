@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
-SETTING_NAMES = ("DATA_DIR", "OPENAI_API_KEY", "OPENAI_MODEL")
+from sales_assistant.config import LANGFUSE_SETTINGS
+
+SETTING_NAMES = ("DATA_DIR", "OPENAI_API_KEY", "OPENAI_MODEL", *LANGFUSE_SETTINGS)
 
 
 @pytest.fixture

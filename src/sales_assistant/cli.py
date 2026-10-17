@@ -42,6 +42,7 @@ from sales_assistant.product_cards import (
 from sales_assistant.prompts import system_prompt
 from sales_assistant.search import PageIndex, best_line
 from sales_assistant.tools import make_search_tool
+from sales_assistant.tracing import langfuse_problem, tracing_config
 
 APP_HELP = "Sales assistant for Metso field sales: products, service costs, flotation data."
 
@@ -82,7 +83,7 @@ def main(
 
 @app.command()
 def check() -> None:
-    """Check the setup: the data folder's contents and whether the OpenAI key is set."""
+    """Check the setup: the data folder, the OpenAI key, and Langfuse if it is set up."""
     settings = load_settings()
     missing = [name for name in EXPECTED_DATA if not (settings.data_dir / name).exists()]
 
@@ -95,7 +96,15 @@ def check() -> None:
     console.print(f"OpenAI key: {key_status} (OPENAI_API_KEY; not tested against the API)")
     console.print(f"Model: {settings.openai_model} (OPENAI_MODEL; not tested)")
 
-    if missing or not settings.has_openai_key:
+    tracing_problem = None
+    if settings.langfuse_url is None:
+        console.print("Langfuse: not set (optional; questions are not traced)")
+    else:
+        tracing_problem = langfuse_problem()
+        status = f"[red]{tracing_problem}[/]" if tracing_problem else "[green]ok[/]"
+        console.print(f"Langfuse: {status} at {settings.langfuse_url} (traces every question)")
+
+    if missing or not settings.has_openai_key or tracing_problem:
         raise typer.Exit(code=1)
 
 
@@ -178,16 +187,18 @@ def search(
 @app.command()
 def ask(question: Annotated[str, typer.Argument(help="The question, in plain words.")]) -> None:
     """Ask one question; see each tool the agent uses, then its answer."""
-    agent = _load_agent()
-    if not _answer(agent, question, thread_id=uuid4().hex):
+    settings = load_settings()
+    agent = _load_agent(settings)
+    if not _answer(agent, question, _conversation_config(settings, "ask")):
         raise typer.Exit(code=1)
 
 
 @app.command()
 def chat() -> None:
     """Talk with the agent; it remembers the conversation until you leave."""
-    agent = _load_agent()
-    thread_id = uuid4().hex
+    settings = load_settings()
+    agent = _load_agent(settings)
+    config = _conversation_config(settings, "chat")
     console.print("Ask about Metso products. Type exit to leave.")
     while True:
         try:
@@ -198,7 +209,7 @@ def chat() -> None:
         if question.lower() in {"exit", "quit"}:
             break
         if question:
-            _answer(agent, question, thread_id)
+            _answer(agent, question, config)
 
 
 def _write_product_cards(settings: Settings, pages: list[Page], rewrite: bool) -> list[ProductCard]:
@@ -215,9 +226,8 @@ def _write_product_cards(settings: Settings, pages: list[Page], rewrite: bool) -
     return cards
 
 
-def _load_agent() -> Agent:
+def _load_agent(settings: Settings) -> Agent:
     """Build the agent from the prepared pages and cards, or exit saying what is missing."""
-    settings = load_settings()
     if not settings.has_openai_key:
         console.print("[red]OPENAI_API_KEY is not set:[/] add it to .env (see .env.example).")
         raise typer.Exit(code=1)
@@ -231,15 +241,21 @@ def _load_agent() -> Agent:
     return build_agent(chat_model(settings), tools, system_prompt(cards), InMemorySaver())
 
 
-def _answer(agent: Agent, question: str, thread_id: str) -> bool:
+def _conversation_config(settings: Settings, name: str) -> RunnableConfig:
+    """The run settings shared by a conversation's turns: its thread, step cap and tracing."""
+    thread_id = uuid4().hex
+    return {
+        "configurable": {"thread_id": thread_id},
+        "recursion_limit": MAX_GRAPH_STEPS,
+        **tracing_config(settings, session_id=thread_id, trace_name=name),
+    }
+
+
+def _answer(agent: Agent, question: str, config: RunnableConfig) -> bool:
     """Run one turn: print each tool call and what it found, then the answer.
 
     Returns False if the turn stopped without an answer.
     """
-    config: RunnableConfig = {
-        "configurable": {"thread_id": thread_id},
-        "recursion_limit": MAX_GRAPH_STEPS,
-    }
     replies: list[AIMessage] = []
     try:
         with console.status("Thinking..."):

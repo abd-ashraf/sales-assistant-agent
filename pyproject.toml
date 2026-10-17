@@ -5,15 +5,17 @@ description = "Command-line sales assistant agent: product answers from brochure
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx==0.28.1",            # Langfuse connection errors in `check`
     "langchain-core==1.6.12",   # messages, tools and structured output
     "langchain-openai==1.7.2",  # the OpenAI chat model
+    "langfuse==5.0.2",          # optional tracing of agent turns
     "langgraph==1.2.16",        # the agent graph
     "openai==3.33.0",           # API errors the chat reports
     "pydantic==2.14.1",         # tool arguments and product descriptions
-    "pypdfium2==5.14.0",     # reads the brochure PDFs
-    "python-dotenv==1.2.4",  # reads settings from .env
-    "rich==15.0.0",          # terminal output
-    "typer==0.27.3",         # command-line interface
+    "pypdfium2==5.14.0",        # reads the brochure PDFs
+    "python-dotenv==1.2.4",     # reads settings from .env
+    "rich==15.0.0",             # terminal output
+    "typer==0.27.3",            # command-line interface
 ]
 
 [project.scripts]

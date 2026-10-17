@@ -22,6 +22,9 @@ it says so when the answer is not in its data.
   brochures, cites the pages it used, and says when they do not cover a question. At
   `ingest`, the model also writes a short card per brochure, so the agent knows which
   products exist.
+- Optional tracing in Langfuse: each question is recorded as a trace (every model call
+  with its prompt, tokens and cost, every tool call with its input and result), and a
+  chat's questions are grouped as one session.
 
 The full plan, ticked off step by step: [docs/TRACKER.md](docs/TRACKER.md).
 
@@ -50,6 +53,18 @@ uv run sales-assistant search "filter performance when the feed changes"
 uv run sales-assistant ask "We have Larox pressure filters but performance drops whenever our feed grade changes"
 uv run sales-assistant chat       # a conversation; type exit to leave
 ```
+
+### Tracing (optional)
+
+Run Langfuse locally, then put its keys in `.env`; without them, nothing is traced.
+
+```bash
+git clone https://github.com/langfuse/langfuse.git
+cd langfuse && docker compose up -d   # then open http://localhost:3000
+```
+
+Create a project and its API keys there, fill in the three `LANGFUSE_` lines in `.env`, and
+run `uv run sales-assistant check`, which confirms Langfuse accepts the keys.
 
 ## Development
 
