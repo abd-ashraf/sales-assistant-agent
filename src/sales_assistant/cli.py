@@ -2,23 +2,46 @@
 
 import io
 import sys
+from collections.abc import Iterator
 from importlib.metadata import version
 from itertools import groupby
 from typing import Annotated
+from uuid import uuid4
 
+import openai
 import typer
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.errors import GraphRecursionError
+from langgraph.graph import MessagesState
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.table import Table
+from rich.text import Text
 
 from sales_assistant.brochures import (
     PAGES_FILE,
     BrochureError,
+    Page,
     load_pages,
     read_brochures,
     save_pages,
 )
-from sales_assistant.config import BROCHURES_DIR, CACHE_DIR, EXPECTED_DATA, load_settings
+from sales_assistant.config import BROCHURES_DIR, CACHE_DIR, EXPECTED_DATA, Settings, load_settings
+from sales_assistant.graph import MAX_GRAPH_STEPS, Agent, build_agent
+from sales_assistant.llm import chat_model
+from sales_assistant.product_cards import (
+    CARDS_FILE,
+    ProductCard,
+    describe_with,
+    load_cards,
+    save_cards,
+    write_cards,
+)
+from sales_assistant.prompts import system_prompt
 from sales_assistant.search import PageIndex, best_line
+from sales_assistant.tools import make_search_tool
 
 APP_HELP = "Sales assistant for Metso field sales: products, service costs, flotation data."
 
@@ -77,8 +100,15 @@ def check() -> None:
 
 
 @app.command()
-def ingest() -> None:
-    """Read the brochures into clean pages and save them in the cache folder."""
+def ingest(
+    rewrite_cards: Annotated[
+        bool,
+        typer.Option(
+            "--rewrite-cards", help="Write every product card again, not only the missing ones."
+        ),
+    ] = False,
+) -> None:
+    """Read the brochures into clean pages, then have the model write a card per brochure."""
     settings = load_settings()
     try:
         pages = read_brochures(settings.data_dir / BROCHURES_DIR)
@@ -87,13 +117,24 @@ def ingest() -> None:
         raise typer.Exit(code=1) from error
     pages_path = CACHE_DIR / PAGES_FILE
     save_pages(pages, pages_path)
+    cards = _write_product_cards(settings, pages, rewrite_cards) if settings.has_openai_key else []
+    products = {card.brochure: card.product for card in cards}
 
-    table = Table("Brochure", "Year", "Pages")
+    table = Table("Brochure", "Year", "Pages", "Product")
     for brochure, group in groupby(pages, key=lambda page: page.brochure):
         brochure_pages = list(group)
-        table.add_row(brochure, str(brochure_pages[0].year or "-"), str(len(brochure_pages)))
+        table.add_row(
+            brochure,
+            str(brochure_pages[0].year or "-"),
+            str(len(brochure_pages)),
+            products.get(brochure, "-"),
+        )
     console.print(table)
     console.print(f"{len(pages)} pages saved to {pages_path}")
+    if cards:
+        console.print(f"{len(cards)} product cards saved to {CACHE_DIR / CARDS_FILE}")
+    else:
+        console.print("Product cards not written: set OPENAI_API_KEY, then run ingest again.")
 
 
 @app.command()
@@ -132,3 +173,113 @@ def search(
             best_line(page.text, query),
         )
     console.print(table)
+
+
+@app.command()
+def ask(question: Annotated[str, typer.Argument(help="The question, in plain words.")]) -> None:
+    """Ask one question; see each tool the agent uses, then its answer."""
+    agent = _load_agent()
+    if not _answer(agent, question, thread_id=uuid4().hex):
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def chat() -> None:
+    """Talk with the agent; it remembers the conversation until you leave."""
+    agent = _load_agent()
+    thread_id = uuid4().hex
+    console.print("Ask about Metso products. Type exit to leave.")
+    while True:
+        try:
+            question = console.input("[bold]you>[/] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            break
+        if question.lower() in {"exit", "quit"}:
+            break
+        if question:
+            _answer(agent, question, thread_id)
+
+
+def _write_product_cards(settings: Settings, pages: list[Page], rewrite: bool) -> list[ProductCard]:
+    """Have the model write a card for each brochure without one, and save all the cards."""
+    cards_path = CACHE_DIR / CARDS_FILE
+    existing = [] if rewrite or not cards_path.exists() else load_cards(cards_path)
+    try:
+        with console.status("Writing product cards..."):
+            cards = write_cards(pages, describe_with(chat_model(settings)), existing)
+    except openai.APIError as error:
+        _print_api_error(error)
+        raise typer.Exit(code=1) from error
+    save_cards(cards, cards_path)
+    return cards
+
+
+def _load_agent() -> Agent:
+    """Build the agent from the prepared pages and cards, or exit saying what is missing."""
+    settings = load_settings()
+    if not settings.has_openai_key:
+        console.print("[red]OPENAI_API_KEY is not set:[/] add it to .env (see .env.example).")
+        raise typer.Exit(code=1)
+    try:
+        pages = load_pages(CACHE_DIR / PAGES_FILE)
+        cards = load_cards(CACHE_DIR / CARDS_FILE)
+    except BrochureError as error:
+        console.print(f"[red]{error}[/]")
+        raise typer.Exit(code=1) from error
+    tools = [make_search_tool(PageIndex(pages))]
+    return build_agent(chat_model(settings), tools, system_prompt(cards), InMemorySaver())
+
+
+def _answer(agent: Agent, question: str, thread_id: str) -> bool:
+    """Run one turn: print each tool call and what it found, then the answer.
+
+    Returns False if the turn stopped without an answer.
+    """
+    config: RunnableConfig = {
+        "configurable": {"thread_id": thread_id},
+        "recursion_limit": MAX_GRAPH_STEPS,
+    }
+    replies: list[AIMessage] = []
+    try:
+        with console.status("Thinking..."):
+            for message in _new_messages(agent, question, config):
+                _print_step(message)
+                if isinstance(message, AIMessage):
+                    replies.append(message)
+    except GraphRecursionError:
+        console.print(f"[red]Stopped after {MAX_GRAPH_STEPS} steps without an answer.[/]")
+        return False
+    except openai.APIError as error:
+        _print_api_error(error)
+        return False
+
+    console.print()
+    console.print(Markdown(replies[-1].text))
+    tokens = sum(reply.usage_metadata["total_tokens"] for reply in replies if reply.usage_metadata)
+    console.print(Text(f"model calls: {len(replies)} · tokens: {tokens:,}", style="dim"))
+    console.print()
+    return True
+
+
+def _new_messages(agent: Agent, question: str, config: RunnableConfig) -> Iterator[BaseMessage]:
+    """Yield the messages each graph step adds to the conversation, as the step ends."""
+    turn: MessagesState = {"messages": [HumanMessage(question)]}
+    for update in agent.stream(turn, config, stream_mode="updates"):
+        for step in update.values():
+            yield from step["messages"]
+
+
+def _print_step(message: BaseMessage) -> None:
+    """Print the tool calls the model asked for, or what a tool found, as dim lines."""
+    if isinstance(message, AIMessage):
+        for call in message.tool_calls:
+            arguments = ", ".join(f"{name}={value!r}" for name, value in call["args"].items())
+            console.print(Text(f"  → {call['name']}({arguments})", style="dim"))
+    elif isinstance(message, ToolMessage):
+        found = ", ".join(message.artifact or []) or message.text
+        console.print(Text(f"    ← {found}", style="dim"))
+
+
+def _print_api_error(error: openai.APIError) -> None:
+    console.print(Text(f"OpenAI request failed: {error.message}", style="red"))

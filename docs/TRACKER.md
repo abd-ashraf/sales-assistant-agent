@@ -35,7 +35,7 @@ tool, and it says so when the answer is not in its data.
 
 - [x] Read the brochures page by page
 - [x] Search the brochures by keyword
-- [ ] Answer product questions with a LangGraph agent
+- [x] Answer product questions with a LangGraph agent
 - [ ] Trace agent turns in Langfuse
 
 ### 2. Service costs
@@ -71,6 +71,32 @@ tool, and it says so when the answer is not in its data.
 | 16 Oct | Text clean-up only for what pypdfium2 outputs | Windows line breaks, icon glyphs that come out as control characters, and PDFium's mark for a hyphen at a line break; Unicode NFKC would turn "ColumnCell™" into "ColumnCellTM" |
 | 17 Oct | Our own BM25 (about 30 lines) rather than a library | Same results as rank_bm25 on 24 test questions, no extra dependency, and every step of the scoring is visible ([Measurements](#measurements)) |
 | 17 Oct | No stemming; hyphenated codes split into words | Stemming found one more answer but pushed demo prompt 1's answer page from 1st to 5th; splitting lets "PF DS" find "PF-DS" at no measured cost |
+| 17 Oct | The model writes one card per brochure at ingest (product, kind, one sentence), copying the product name from the brochure's title | The agent learns which products exist without a hand-written list, and the two Larox PF editions print the same title, so they group as one product. Asking the model to reuse earlier names left them apart; asking "same product as one already described?" merged the PF-DS into them |
+| 17 Oct | The model picks the search's brochure filter from the cards | Spec tables share few words with a question: the 14-chamber question finds its page 2nd within `larox-pf-ds`, 7th over all brochures |
+| 17 Oct | At most 12 graph steps per question | Room for five rounds of tools and an answer; an even number, so a stopped turn still ends on tool results and the chat can go on |
+
+## Limits and scale-up
+
+Out of scope for this assignment, noted as they come up, with what would change.
+
+- **Conversation length:** earlier tool results stay in the chat, so each turn costs more
+  (3,300 to 9,300 tokens over three questions). Trim or summarise old tool results.
+- **Many products:** the prompt lists every product, about 50 tokens each. Past a few
+  hundred, a "find products" tool replaces the list.
+- **Many pages:** keyword search in memory suits thousands of pages. Beyond that, a search
+  service with keyword and embedding search, a reranker and metadata filters, behind the
+  same tool.
+- **Long documents:** search by section instead of by page, give the agent a map of each
+  document, and add a tool to read neighbouring pages.
+- **Changed brochures:** cards are cached by file name, so a new edition under an old name
+  needs `ingest --rewrite-cards`. At scale, key the cache by file hash.
+- **Memory:** chats live in memory and end with the session; production would keep them in
+  a database.
+- **Speed:** searching through the agent costs one extra model call per question. If that
+  matters, pre-load the top pages for product questions.
+- **Users:** built for Metso's salespeople, so it shows internal data such as past costs. A
+  public version would need sign-in, guardrails against prompt injection, and no internal
+  cost data.
 
 ## Measurements
 
