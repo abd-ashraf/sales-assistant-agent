@@ -40,7 +40,7 @@ tool, and it says so when the answer is not in its data.
 
 ### 2. Service costs
 
-- [ ] Turn service reports into checked records
+- [x] Turn service reports into checked records
 - [ ] Estimate service visits from past reports
 
 ### 3. Flotation data (optional part)
@@ -76,6 +76,13 @@ tool, and it says so when the answer is not in its data.
 | 17 Oct | At most 12 graph steps per question | Room for five rounds of tools and an answer; an even number, so a stopped turn still ends on tool results and the chat can go on |
 | 17 Oct | Tracing through Langfuse's LangChain callback, on only when its three settings are in `.env` | Records the graph, each step, every model call (prompt, tokens, cost) and every tool call without changing the graph; a chat's thread becomes its Langfuse session |
 | 17 Oct | `check` tests the Langfuse connection; `ask` and `chat` do not | With keys set but no server, a question still works but exits about 6 s later with one warning (measured); `check` finds that on demand without slowing every question |
+| 17 Oct | Each service report is read once by the model into a fixed form, then checked in code | Four layouts and shorthand notes ("11-12h", "as per agreement + travel") defeat parsers, so one path reads them all. The model copies; code works out the cost status, the ex-VAT total and the rates, and flags gaps without filling them |
+| 17 Oct | Equipment and job types are fixed lists the model picks from | Costs are grouped by equipment and job, which needs exact names; free names drift, as the product cards showed |
+| 17 Oct | Nine reports checked by hand test the extraction, with the hand-counted cost statuses and flags | A repeatable measure of the reader on real data; it runs locally and skips where the data is absent |
+| 17 Oct | One `ingest --rewrite` for everything the model writes | One flag to remember; redoing cards and records together is about 62 small calls |
+| 18 Oct | A cost that names no currency, such as "$2,540", is read as US dollars by a rule in code, and flagged | The model rightly left "$" blank, since it could be any dollar. The three such reports come from Russia, Peru and Zambia, and the Peru and Zambia reports that name a currency use USD; one visible, tested rule replaces a guess |
+| 18 Oct | Hours are taken only as stated: "about 8.4" is 8.4 and "11-12h" is 11.5; unclear hours and one-way travel stay blank | The first run's yes/no for approximate hours was inconsistent ("about 14.1" marked, "about 8.4" not), and one note's one-way travel time was read as the whole trip |
+| 18 Oct | The form's examples are made up, never copied from the reports | Two examples had been copied from hand-checked reports (FSR-0016, FSR-0035), so their test could pass by copying; with made-up phrases, a pass shows the rule itself works |
 
 ## Limits and scale-up
 
@@ -90,8 +97,15 @@ Out of scope for this assignment, noted as they come up, with what would change.
   same tool.
 - **Long documents:** search by section instead of by page, give the agent a map of each
   document, and add a tool to read neighbouring pages.
-- **Changed brochures:** cards are cached by file name, so a new edition under an old name
-  needs `ingest --rewrite-cards`. At scale, key the cache by file hash.
+- **Changed brochures or reports:** cards and records are cached by file name, so a new
+  edition under an old name needs `ingest --rewrite`. At scale, key the cache by file hash.
+- **Many reports:** read them as a batch job (OpenAI's Batch API costs half), keep the
+  records in a database, check a random sample each month to measure accuracy per field,
+  and send flagged records to a review queue.
+- **Fine-tuning:** not worth it for 50 reports. At high volume, the corrections made in the
+  review queue could train a smaller, cheaper model to read reports.
+- **New equipment or job types:** each fixed list needs one more line; until then, new
+  equipment is filed as `other`.
 - **Memory:** chats live in memory and end with the session; production would keep them in
   a database.
 - **Speed:** searching through the agent costs one extra model call per question. If that

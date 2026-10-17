@@ -13,6 +13,14 @@ from sales_assistant.brochures import PAGES_FILE, Page, save_pages
 from sales_assistant.cli import app, use_utf8_output
 from sales_assistant.config import EXPECTED_DATA
 from sales_assistant.product_cards import CARDS_FILE, ProductCard, load_cards, save_cards
+from sales_assistant.service_records import (
+    RECORDS_FILE,
+    CostStatus,
+    Equipment,
+    JobType,
+    ReportReading,
+    load_records,
+)
 from tests.fakes import (
     ScriptedChatModel,
     TurnRecorder,
@@ -52,6 +60,29 @@ def use_model(monkeypatch: pytest.MonkeyPatch, model: ScriptedChatModel) -> Scri
 def description(product: str) -> AIMessage:
     """The model's reply to a request for a product card."""
     return tool_call("ProductDescription", product=product, category="filter", summary="Filters.")
+
+
+def reading(customer: str) -> AIMessage:
+    """The model's reply to a request to read a service report: a total, without lines."""
+    form = ReportReading(
+        customer=customer,
+        site="Aitik",
+        country="Sweden",
+        visit_date="2023-05-12",
+        equipment=Equipment.LAROX_PF_DS,
+        job_types=[JobType.FILTER_CLOTH_REPLACEMENT],
+        on_site_hours=8.4,
+        travel_hours=4.9,
+        task_hours=[],
+        currency="EUR",
+        cost_lines=[],
+        total=2215.4,
+        vat=None,
+        weekend=False,
+        emergency=False,
+        customer_parts=False,
+    )
+    return tool_call("ReportReading", **form.model_dump(mode="json"))
 
 
 @pytest.fixture(name="prepared")
@@ -152,50 +183,61 @@ def test_ingest_saves_the_pages_and_lists_each_brochure(workdir: Path) -> None:
 
 
 @pytest.mark.usefixtures("brochures_folder")
-def test_ingest_without_a_key_saves_the_pages_and_says_the_cards_were_not_written(
+def test_ingest_without_a_key_saves_the_pages_and_says_what_was_not_written(
     workdir: Path,
 ) -> None:
     result = runner.invoke(app, ["ingest"])
 
     assert result.exit_code == 0
-    assert "Product cards not written: set OPENAI_API_KEY" in result.output
+    assert "Product cards and service records not written: set OPENAI_API_KEY" in result.output
     assert not (workdir / ".cache" / CARDS_FILE).exists()
+    assert not (workdir / ".cache" / RECORDS_FILE).exists()
 
 
-@pytest.mark.usefixtures("brochures_folder")
-def test_ingest_with_a_key_has_the_model_write_a_card_per_brochure(
+@pytest.mark.usefixtures("brochures_folder", "reports_folder")
+def test_ingest_with_a_key_writes_the_product_cards_and_the_service_records(
     workdir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    use_model(monkeypatch, scripted_model(description("Larox PF-DS"), description("Undated")))
+    replies = (description("Larox PF-DS"), description("Undated"), reading("Boliden AB"))
+    use_model(monkeypatch, scripted_model(*replies))
 
     result = runner.invoke(app, ["ingest"])
 
     assert result.exit_code == 0
     assert "2 product cards saved" in result.output
+    assert "1 service records saved" in result.output
     cards = load_cards(workdir / ".cache" / CARDS_FILE)
     assert [(card.brochure, card.product) for card in cards] == [
         ("larox-pf-ds", "Larox PF-DS"),
         ("undated", "Undated"),
     ]
+    records = load_records(workdir / ".cache" / RECORDS_FILE)
+    assert [(record.report_id, record.cost_status) for record in records] == [
+        ("FSR-0001", CostStatus.TOTAL_ONLY)
+    ]
 
 
-@pytest.mark.usefixtures("brochures_folder")
-def test_ingest_keeps_saved_cards_unless_asked_to_rewrite_them(
+@pytest.mark.usefixtures("brochures_folder", "reports_folder")
+def test_ingest_keeps_what_the_model_wrote_unless_asked_to_rewrite_it(
     workdir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    use_model(monkeypatch, scripted_model(description("First name"), description("Undated")))
+    first = (description("First name"), description("Undated"), reading("First customer"))
+    use_model(monkeypatch, scripted_model(*first))
     runner.invoke(app, ["ingest"])
 
     use_model(monkeypatch, scripted_model())
     kept = runner.invoke(app, ["ingest"])
-    use_model(monkeypatch, scripted_model(description("New name"), description("Undated")))
-    rewritten = runner.invoke(app, ["ingest", "--rewrite-cards"])
+    again = (description("New name"), description("Undated"), reading("New customer"))
+    use_model(monkeypatch, scripted_model(*again))
+    rewritten = runner.invoke(app, ["ingest", "--rewrite"])
 
+    assert kept.exit_code == rewritten.exit_code == 0
     assert "First name" in kept.output
     assert "New name" in rewritten.output
     assert load_cards(workdir / ".cache" / CARDS_FILE)[0].product == "New name"
+    assert load_records(workdir / ".cache" / RECORDS_FILE)[0].customer == "New customer"
 
 
 @pytest.mark.usefixtures("workdir")

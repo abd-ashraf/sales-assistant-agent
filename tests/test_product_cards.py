@@ -11,13 +11,11 @@ from sales_assistant.product_cards import (
     CARDS_FILE,
     ProductCard,
     ProductDescription,
-    describe_with,
     description_request,
     load_cards,
     save_cards,
     write_cards,
 )
-from tests.fakes import scripted_model, tool_call
 
 REAL_CARDS = Path(__file__).parents[1] / ".cache" / CARDS_FILE
 
@@ -68,12 +66,6 @@ def test_description_request_sends_the_brochure_text_up_to_the_limit() -> None:
 
     assert "x" * BROCHURE_TEXT_LIMIT in request
     assert "x" * (BROCHURE_TEXT_LIMIT + 1) not in request
-
-
-def test_describe_with_returns_the_description_the_model_gives() -> None:
-    model = scripted_model(tool_call("ProductDescription", **LAROX_PF.model_dump()))
-
-    assert describe_with(model)("Describe this brochure") == LAROX_PF
 
 
 def test_load_cards_reads_back_what_save_cards_wrote(tmp_path: Path) -> None:

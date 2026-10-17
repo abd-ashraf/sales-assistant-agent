@@ -25,6 +25,10 @@ it says so when the answer is not in its data.
 - Optional tracing in Langfuse: each question is recorded as a trace (every model call
   with its prompt, tokens and cost, every tool call with its input and result), and a
   chat's questions are grouped as one session.
+- Service reports turned into checked records at `ingest`: the model fills a fixed form
+  per report, and code checks the sums and hours and flags every gap (a cut-off cost
+  table, VAT included, a currency written only as "$") without filling it in. Nine
+  reports checked by hand test the extraction.
 
 The full plan, ticked off step by step: [docs/TRACKER.md](docs/TRACKER.md).
 
@@ -38,6 +42,14 @@ answers, asks a question, or requests tools. The routing rule, `route_after_mode
 tool requests to `run_tools` and otherwise ends the turn; tool results go back to the
 model. The CLI prints every tool call, so each routing decision is visible.
 
+## How the data is prepared
+
+![What ingest prepares](docs/diagrams/data-prep.drawio.svg)
+
+`ingest` runs once. Brochure pages are read with code alone; the model writes a card per
+brochure and fills a form per service report, and code checks every form. What the model
+writes is saved, so later runs reuse it, and `ingest --rewrite` writes it again.
+
 ## Quick start
 
 Needs [uv](https://docs.astral.sh/uv/), which also installs the right Python version.
@@ -48,7 +60,7 @@ repository), or point `DATA_DIR` in `.env` at it.
 uv sync
 cp .env.example .env              # then add your OPENAI_API_KEY
 uv run sales-assistant check      # checks the data folder and the key
-uv run sales-assistant ingest     # reads the brochures and writes product cards into .cache/
+uv run sales-assistant ingest     # prepares brochure pages, product cards and service records
 uv run sales-assistant search "filter performance when the feed changes"
 uv run sales-assistant ask "We have Larox pressure filters but performance drops whenever our feed grade changes"
 uv run sales-assistant chat       # a conversation; type exit to leave

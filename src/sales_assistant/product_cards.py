@@ -9,7 +9,6 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from sales_assistant.brochures import BrochureError, Page
@@ -43,17 +42,6 @@ class ProductCard:
 
 
 DescribeBrochure = Callable[[str], ProductDescription]
-
-
-def describe_with(model: BaseChatModel) -> DescribeBrochure:
-    """Return a function that has `model` answer a description request as structured output."""
-    structured_model = model.with_structured_output(ProductDescription)
-
-    def describe(request: str) -> ProductDescription:
-        """Send the request and return the model's description."""
-        return ProductDescription.model_validate(structured_model.invoke(request))
-
-    return describe
 
 
 def description_request(pages: list[Page]) -> str:

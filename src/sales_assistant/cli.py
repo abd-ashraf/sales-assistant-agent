@@ -2,6 +2,7 @@
 
 import io
 import sys
+from collections import Counter
 from collections.abc import Iterator
 from importlib.metadata import version
 from itertools import groupby
@@ -28,19 +29,38 @@ from sales_assistant.brochures import (
     read_brochures,
     save_pages,
 )
-from sales_assistant.config import BROCHURES_DIR, CACHE_DIR, EXPECTED_DATA, Settings, load_settings
+from sales_assistant.config import (
+    BROCHURES_DIR,
+    CACHE_DIR,
+    EXPECTED_DATA,
+    SERVICE_REPORTS_DIR,
+    Settings,
+    load_settings,
+)
 from sales_assistant.graph import MAX_GRAPH_STEPS, Agent, build_agent
-from sales_assistant.llm import chat_model
+from sales_assistant.llm import chat_model, form_filler
 from sales_assistant.product_cards import (
     CARDS_FILE,
     ProductCard,
-    describe_with,
+    ProductDescription,
     load_cards,
     save_cards,
     write_cards,
 )
 from sales_assistant.prompts import system_prompt
 from sales_assistant.search import PageIndex, best_line
+from sales_assistant.service_records import (
+    RECORDS_FILE,
+    CostStatus,
+    Flag,
+    RecordError,
+    ReportReading,
+    ServiceRecord,
+    load_records,
+    read_reports,
+    save_records,
+    write_records,
+)
 from sales_assistant.tools import make_search_tool
 from sales_assistant.tracing import langfuse_problem, tracing_config
 
@@ -110,14 +130,16 @@ def check() -> None:
 
 @app.command()
 def ingest(
-    rewrite_cards: Annotated[
+    rewrite: Annotated[
         bool,
         typer.Option(
-            "--rewrite-cards", help="Write every product card again, not only the missing ones."
+            "--rewrite",
+            help="Have the model write every product card and service record again, "
+            "not only the missing ones.",
         ),
     ] = False,
 ) -> None:
-    """Read the brochures into clean pages, then have the model write a card per brochure."""
+    """Prepare the data: brochure pages, and with an OpenAI key, product cards and records."""
     settings = load_settings()
     try:
         pages = read_brochures(settings.data_dir / BROCHURES_DIR)
@@ -126,24 +148,17 @@ def ingest(
         raise typer.Exit(code=1) from error
     pages_path = CACHE_DIR / PAGES_FILE
     save_pages(pages, pages_path)
-    cards = _write_product_cards(settings, pages, rewrite_cards) if settings.has_openai_key else []
-    products = {card.brochure: card.product for card in cards}
-
-    table = Table("Brochure", "Year", "Pages", "Product")
-    for brochure, group in groupby(pages, key=lambda page: page.brochure):
-        brochure_pages = list(group)
-        table.add_row(
-            brochure,
-            str(brochure_pages[0].year or "-"),
-            str(len(brochure_pages)),
-            products.get(brochure, "-"),
-        )
-    console.print(table)
+    cards = _write_product_cards(settings, pages, rewrite) if settings.has_openai_key else []
+    _print_brochures(pages, cards)
     console.print(f"{len(pages)} pages saved to {pages_path}")
-    if cards:
-        console.print(f"{len(cards)} product cards saved to {CACHE_DIR / CARDS_FILE}")
-    else:
-        console.print("Product cards not written: set OPENAI_API_KEY, then run ingest again.")
+    if not settings.has_openai_key:
+        console.print(
+            "Product cards and service records not written: set OPENAI_API_KEY, "
+            "then run ingest again."
+        )
+        return
+    console.print(f"{len(cards)} product cards saved to {CACHE_DIR / CARDS_FILE}")
+    _print_records(_write_service_records(settings, rewrite))
 
 
 @app.command()
@@ -216,14 +231,64 @@ def _write_product_cards(settings: Settings, pages: list[Page], rewrite: bool) -
     """Have the model write a card for each brochure without one, and save all the cards."""
     cards_path = CACHE_DIR / CARDS_FILE
     existing = [] if rewrite or not cards_path.exists() else load_cards(cards_path)
+    describe = form_filler(chat_model(settings), ProductDescription)
     try:
         with console.status("Writing product cards..."):
-            cards = write_cards(pages, describe_with(chat_model(settings)), existing)
+            cards = write_cards(pages, describe, existing)
     except openai.APIError as error:
         _print_api_error(error)
         raise typer.Exit(code=1) from error
     save_cards(cards, cards_path)
     return cards
+
+
+def _print_brochures(pages: list[Page], cards: list[ProductCard]) -> None:
+    """Print each brochure's year, page count and, if it has a card, its product."""
+    products = {card.brochure: card.product for card in cards}
+    table = Table("Brochure", "Year", "Pages", "Product")
+    for brochure, group in groupby(pages, key=lambda page: page.brochure):
+        brochure_pages = list(group)
+        table.add_row(
+            brochure,
+            str(brochure_pages[0].year or "-"),
+            str(len(brochure_pages)),
+            products.get(brochure, "-"),
+        )
+    console.print(table)
+
+
+def _write_service_records(settings: Settings, rewrite: bool) -> list[ServiceRecord]:
+    """Have the model read each report without a record, check the readings, and save all."""
+    records_path = CACHE_DIR / RECORDS_FILE
+    try:
+        reports = read_reports(settings.data_dir / SERVICE_REPORTS_DIR)
+        existing = [] if rewrite or not records_path.exists() else load_records(records_path)
+    except RecordError as error:
+        console.print(f"[red]{error}[/]")
+        raise typer.Exit(code=1) from error
+    read = form_filler(chat_model(settings), ReportReading)
+    try:
+        with console.status("Reading service reports..."):
+            records = write_records(reports, read, existing)
+    except openai.APIError as error:
+        _print_api_error(error)
+        raise typer.Exit(code=1) from error
+    save_records(records, records_path)
+    return records
+
+
+def _print_records(records: list[ServiceRecord]) -> None:
+    """Print how many reports state each kind of cost, and which reports carry each flag."""
+    statuses = Counter(record.cost_status for record in records)
+    table = Table("Cost in the report", "Reports")
+    for status in CostStatus:
+        table.add_row(status.replace("_", " "), str(statuses[status]))
+    console.print(table)
+    for flag in Flag:
+        flagged = [record.report_id for record in records if flag in record.flags]
+        if flagged:
+            console.print(f"{flag}: {', '.join(flagged)}")
+    console.print(f"{len(records)} service records saved to {CACHE_DIR / RECORDS_FILE}")
 
 
 def _load_agent(settings: Settings) -> Agent:

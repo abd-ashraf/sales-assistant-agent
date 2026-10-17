@@ -32,6 +32,16 @@ def brochures_folder(tmp_path: Path) -> Path:
     return folder
 
 
+@pytest.fixture
+def reports_folder(tmp_path: Path) -> Path:
+    """`data/HistoricalServices` with one short field service report."""
+    folder = tmp_path / "data" / "HistoricalServices"
+    folder.mkdir(parents=True)
+    report = "Field Service Report FSR-0001\nOn site 8.4 h, travel 4.9 h\nTotal: EUR 2,215.40\n"
+    (folder / "FSR-0001.txt").write_text(report, encoding="utf-8")
+    return folder
+
+
 def write_pdf(path: Path, pages: list[list[str]]) -> None:
     """Write a minimal PDF in Helvetica: one list of text lines per page."""
     kids = " ".join(f"{4 + 2 * index} 0 R" for index in range(len(pages)))
