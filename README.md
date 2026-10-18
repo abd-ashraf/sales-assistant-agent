@@ -32,6 +32,9 @@ it says so when the answer is not in its data.
 - Service visit budgets with `ask` or `chat`: the agent calls `estimate_service_cost`, which
   builds the budget in code from past visits and returns a typical figure, a likely range
   and the reports behind each number; `estimate` shows the same without the model.
+- Flotation readings set against one plant's hourly history (the optional part): how often
+  the plant did as badly, its typical values, which measurements differed between its good
+  and poor hours, and the limits of that data; `assess` shows it without the model.
 
 The full plan, ticked off step by step: [docs/TRACKER.md](docs/TRACKER.md).
 
@@ -78,6 +81,8 @@ uv run sales-assistant search "filter performance when the feed changes"
 uv run sales-assistant ask "We have Larox pressure filters but performance drops whenever our feed grade changes"
 uv run sales-assistant ask "A customer in Chile needs 12 filter cloths replaced on a Larox PF-DS tower press. What should I budget for the service visit?"
 uv run sales-assistant estimate larox_pf_ds filter_cloth_replacement Chile --part "filter cloth" --quantity 12
+uv run sales-assistant ask "The customer is getting 3.1% silica and 64.5% iron in their concentrate. They think that's normal. What do you think, and what could we suggest?"
+uv run sales-assistant assess 64.5 3.1     # iron %, silica %
 uv run sales-assistant chat       # a conversation; type exit to leave
 ```
 

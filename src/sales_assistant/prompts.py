@@ -5,9 +5,10 @@ from itertools import groupby
 from sales_assistant.product_cards import ProductCard
 
 SYSTEM_PROMPT = """\
-You help a Metso salesperson during a call with a mining customer. You answer from two
-sources only, through your tools: Metso's product brochures (search_product_docs) and
-past field service reports (estimate_service_cost).
+You help a Metso salesperson during a call with a mining customer. You answer from three
+sources only, through your tools: Metso's product brochures (search_product_docs), past
+field service reports (estimate_service_cost), and one flotation plant's hourly history
+(assess_flotation_readings).
 
 Products:
 - Search before you answer a product question. When the salesperson names a product,
@@ -28,6 +29,15 @@ Service costs:
 - Lead with the typical total and the likely range, then the main pieces, the reports
   behind them and the assumptions. Say plainly what the reports do not cover.
 - Present it as a budget from past visits, not a quote.
+
+Process readings:
+- Judge concentrate grades only with assess_flotation_readings. Lead with whether they are
+  typical for that plant, using its typical values, and say it is one plant, not every
+  plant.
+- Present the measurements it reports as associations, not causes, and give its limits
+  in a sentence.
+- To suggest what Metso could offer, search the brochures for products that act on those
+  measurements, and cite the pages.
 
 Always:
 - If a missing detail would change your answer, ask one short question. Otherwise
@@ -51,8 +61,9 @@ def product_list(cards: list[ProductCard]) -> str:
     for product, group in groupby(newest_first, key=lambda card: card.product):
         product_cards = list(group)
         newest = product_cards[0]
+        # Code marks keep the year out of the name: "columncell (2024)" was once passed whole.
         brochures = ", ".join(
-            f"{card.brochure} ({card.year or 'no year'})" for card in product_cards
+            f"`{card.brochure}` ({card.year or 'no year'})" for card in product_cards
         )
         lines.append(f"- {product} ({newest.category}): {newest.summary} Brochures: {brochures}.")
     return "\n".join(lines)

@@ -45,7 +45,7 @@ tool, and it says so when the answer is not in its data.
 
 ### 3. Flotation data (optional part)
 
-- [ ] Compare flotation readings with plant history
+- [x] Compare flotation readings with plant history
 
 ### 4. Evaluation
 
@@ -90,6 +90,15 @@ tool, and it says so when the answer is not in its data.
 | 18 Oct | Prices converted with a fixed table of 2024 averages, named in every answer; the answer uses the currency of the country's own reports | Reproducible and testable without a rates service; Chile's reports are in USD |
 | 18 Oct | The model chooses the inputs; code does every sum, and the tool's text carries each total ready-made | The model reads numbers and never adds them up |
 | 18 Oct | A cost line without a single number is dropped | One re-read turned "Cost: total as per agreement + travel" (FSR-0030) into two empty lines, which made it look like a cut-off table with an assumed currency; the hand-counted tests caught it |
+| 18 Oct | Flotation readings are assessed by a statistics tool in code, not by the model or a trained model | The brief asks for an answer computed from the data. No single measurement links with silica beyond 0.22, so a predictive model would be weak and hard to explain; code-computed ranks are exact and testable |
+| 18 Oct | Readings are ranked by the share of hours at least as bad, against the median and middle half | Demo prompt 3: 24% of hours had silica of 3.1% or more, 28% had iron of 64.5% or less, 20% both. It happens, but it is this plant's worst quarter, not "normal" |
+| 18 Oct | The 6 measurements most linked with silica are reported, computed, with their middle value in the best and worst quarter of hours | No hand-picked list, so another plant's file works too; here it brought up column levels (about 448 against 395), which a list of the usual levers would have missed |
+| 18 Oct | Measurements are reported as associations with their limits, never as causes | Every link is weak, and amine is higher in poor hours, most likely because operators add more when silica rises |
+| 18 Oct | Python's standard library, not pandas | 4,097 rows; medians, quartiles and correlation are built in, so no 40 MB dependency |
+| 18 Oct | What Metso could offer comes from the brochure search, cited | Plant numbers come from the plant data and product facts from the brochures, each with its source |
+| 18 Oct | The flotation text states the verdict's number ("worse than 76% of the plant's hours"), and the prompt asks to lead with whether readings are typical for that plant | The first live answer called 3.1% silica "not unusual" and turned "24% of hours were this bad" round awkwardly; code now does that flip |
+| 18 Oct | The prompt's product list marks brochure names as code: `columncell` (2024) | The model once passed "columncell (2024)" whole as a brochure name; the search refused it, and the retry cost a model call |
+| 18 Oct | Flotation suggestions come from products that act on the measurements the tool reports | Runs of demo prompt 3 suggested CellStation (level and air control, where the data points) or ColumnCell (fine particles, which the data never mentions) |
 
 ## Limits and scale-up
 
@@ -111,6 +120,10 @@ Out of scope for this assignment, noted as they come up, with what would change.
   and send flagged records to a review queue.
 - **Fine-tuning:** not worth it for 50 reports. At high volume, the corrections made in the
   review queue could train a smaller, cheaper model to read reports.
+- **One model for everything:** one setting names the model for ingest and for answers.
+  Ingest reads each document once, so a stronger model there costs little and every answer
+  gains from its reading; answers run on every question, where a smaller model keeps the
+  call fast and cheap. A second setting would split them.
 - **Combinations:** the likely range tries every combination of past values (648 for demo
   prompt 2). With thousands of past visits, a random sample of combinations gives the same
   range.
@@ -126,6 +139,11 @@ Out of scope for this assignment, noted as they come up, with what would change.
 - **Saved records:** each record keeps the model's reading together with what code worked
   out from it, so a change to the checks means reading the reports again. Saving only the
   reading, and working the rest out on load, would avoid those calls.
+- **One plant's history:** the readings are judged against one iron ore plant in 2017, not
+  against the customer's own plant. With the customer's data, the same tool would compare
+  them with their own history; with many plants, with plants of the same ore and process.
+- **Associations only:** the tool shows which measurements differed between good and poor
+  hours. Finding what changes silica would need controlled trials or a process model.
 - **New equipment or job types:** each fixed list needs one more line; until then, new
   equipment is filed as `other`.
 - **Memory:** chats live in memory and end with the session; production would keep them in

@@ -4,6 +4,7 @@ from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
 from sales_assistant.cost_estimate import CostQuestion, PartNeed, describe_estimate, estimate_visit
+from sales_assistant.flotation import PlantHistory, Readings, assess_readings, describe_assessment
 from sales_assistant.search import PageIndex, SearchHit
 from sales_assistant.service_records import Equipment, JobType, ServiceRecord
 
@@ -21,6 +22,12 @@ COST_DESCRIPTION = (
     "each piece with the reports behind it, the assumptions, and what the reports do not "
     "cover. Needs the equipment, the job and the country: if the salesperson has not given "
     "one of them, ask instead of guessing."
+)
+FLOTATION_DESCRIPTION = (
+    "Set a customer's concentrate grades (iron and silica, in percent) against one iron ore "
+    "flotation plant's hourly history from 2017: how often that plant did as badly, its "
+    "typical values, which of its measurements differed between its good and poor hours, "
+    "and the limits of this data. Use it when the salesperson gives flotation readings."
 )
 
 
@@ -91,3 +98,21 @@ def _citation(hit: SearchHit) -> str:
 
 def _year(hit: SearchHit) -> str:
     return f" ({hit.page.year})" if hit.page.year else ""
+
+
+def make_flotation_tool(history: PlantHistory) -> BaseTool:
+    """Return the assess_flotation_readings tool, which compares readings with `history`."""
+
+    # The second value returned names the data used, for the CLI; the model reads the first.
+    @tool(
+        "assess_flotation_readings",
+        description=FLOTATION_DESCRIPTION,
+        args_schema=Readings,
+        response_format="content_and_artifact",
+    )
+    def assess_flotation_readings(iron_pct: float, silica_pct: float) -> tuple[str, list[str]]:
+        """Return the assessment as text, and the data it used."""
+        assessment = assess_readings(history, Readings(iron_pct=iron_pct, silica_pct=silica_pct))
+        return describe_assessment(assessment), [f"plant history, {len(history.times):,} hours"]
+
+    return assess_flotation_readings

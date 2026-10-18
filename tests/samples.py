@@ -1,5 +1,6 @@
 """Small hand-made data shared by the tests."""
 
+from pathlib import Path
 from typing import Any
 
 from sales_assistant.service_records import (
@@ -63,3 +64,25 @@ def make_record(report_id: str, **changes: Any) -> ServiceRecord:
         "flags": [],
     }
     return ServiceRecord(**(fields | changes))
+
+
+# A tiny plant: silica rises from 1 to 8% hour by hour while air flow falls and amine rises.
+# Its four March hours and four April hours are two days apart, and its density never moves.
+PLANT_CSV = """\
+date,% Iron Feed,Flotation Column 01 Air Flow,Amina Flow,Ore Pulp Flow,Ore Pulp Density,\
+% Iron Concentrate,% Silica Concentrate
+2017-03-30 01:00:00,56,300,460,400,1.7,66.0,1
+2017-03-30 02:00:00,55,300,470,401,1.7,65.5,2
+2017-03-30 03:00:00,56,290,480,399,1.7,65.0,3
+2017-03-30 04:00:00,55,280,490,400,1.7,64.5,4
+2017-04-02 01:00:00,56,270,500,401,1.7,64.0,5
+2017-04-02 02:00:00,55,260,510,399,1.7,63.5,6
+2017-04-02 03:00:00,56,250,520,400,1.7,63.0,7
+2017-04-02 04:00:00,55,250,530,401,1.7,62.5,8
+"""
+
+
+def write_plant_csv(path: Path) -> None:
+    """Write the tiny plant's hourly data to `path`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(PLANT_CSV, encoding="utf-8")

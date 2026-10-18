@@ -1,13 +1,15 @@
 """Tests for the agent's tools, called the way the graph's tool step calls them."""
 
+from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import ToolMessage
 
 from sales_assistant.brochures import Page
+from sales_assistant.flotation import load_history
 from sales_assistant.search import PageIndex
-from sales_assistant.tools import make_cost_tool, make_search_tool
-from tests.samples import make_record
+from sales_assistant.tools import make_cost_tool, make_flotation_tool, make_search_tool
+from tests.samples import make_record, write_plant_csv
 
 PAGES = [
     Page("larox-pf-ds", 2, 2025, "Chambers 8 10 12"),
@@ -72,3 +74,17 @@ def test_cost_tool_returns_the_estimate_and_the_reports_behind_it() -> None:
     assert message.text.startswith("Service cost estimate in EUR")
     assert "Typical total: 928." in message.text
     assert message.artifact == ["FSR-0027"]
+
+
+def test_flotation_tool_returns_the_assessment_and_the_data_it_used(tmp_path: Path) -> None:
+    write_plant_csv(tmp_path / "plant.csv")
+    flotation_tool = make_flotation_tool(load_history(tmp_path / "plant.csv"))
+    args = {"iron_pct": 63.0, "silica_pct": 7.0}
+
+    message = flotation_tool.invoke(
+        {"type": "tool_call", "name": flotation_tool.name, "args": args, "id": "1"}
+    )
+
+    assert isinstance(message, ToolMessage)
+    assert "worse than 75% of the plant's hours" in message.text
+    assert message.artifact == ["plant history, 8 hours"]

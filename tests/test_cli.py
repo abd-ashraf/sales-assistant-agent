@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from sales_assistant import cli, tracing
 from sales_assistant.brochures import PAGES_FILE, Page, save_pages
 from sales_assistant.cli import app, use_utf8_output
-from sales_assistant.config import EXPECTED_DATA
+from sales_assistant.config import EXPECTED_DATA, FLOTATION_CSV
 from sales_assistant.product_cards import CARDS_FILE, ProductCard, load_cards, save_cards
 from sales_assistant.service_records import (
     RECORDS_FILE,
@@ -29,7 +29,7 @@ from tests.fakes import (
     scripted_model,
     tool_call,
 )
-from tests.samples import make_record
+from tests.samples import make_record, write_plant_csv
 
 runner = CliRunner()
 LANGFUSE_URL = "http://localhost:3000"
@@ -95,6 +95,7 @@ def fixture_prepared(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     save_cards([card], workdir / ".cache" / CARDS_FILE)
     record = make_record("FSR-0027", labour_rate=78, travel_rate=62, travel_hours=4.9)
     save_records([record], workdir / ".cache" / RECORDS_FILE)
+    write_plant_csv(workdir / "data" / FLOTATION_CSV)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     return workdir
 
@@ -403,3 +404,41 @@ def test_estimate_asks_for_ingest_when_there_are_no_records() -> None:
 
     assert result.exit_code == 1
     assert "No service records" in result.output
+
+
+@pytest.mark.usefixtures("prepared")
+def test_assess_prints_what_the_flotation_tool_gives_without_the_model() -> None:
+    result = runner.invoke(app, ["assess", "63", "7"])
+
+    assert result.exit_code == 0
+    assert "Silica 7.00%: the plant's median is 4.50%" in result.output
+
+
+@pytest.mark.usefixtures("prepared")
+def test_assess_refuses_readings_that_are_not_percentages() -> None:
+    result = runner.invoke(app, ["assess", "120", "3.1"])
+
+    assert result.exit_code == 1
+    assert "between 0 and 100" in result.output
+
+
+@pytest.mark.usefixtures("workdir")
+def test_assess_names_the_missing_plant_data() -> None:
+    result = runner.invoke(app, ["assess", "64.5", "3.1"])
+
+    assert result.exit_code == 1
+    assert "No plant data" in result.output
+
+
+@pytest.mark.usefixtures("prepared")
+def test_ask_shows_the_flotation_tool_call_and_the_data_it_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    readings = tool_call("assess_flotation_readings", iron_pct=63.0, silica_pct=7.0)
+    use_model(monkeypatch, scripted_model(readings, "Worse than 75% of the plant's hours."))
+
+    result = runner.invoke(app, ["ask", "63% iron and 7% silica: is that normal?"])
+
+    assert result.exit_code == 0
+    assert "→ assess_flotation_readings(iron_pct=63.0, silica_pct=7.0)" in result.output
+    assert "← plant history, 8 hours" in result.output

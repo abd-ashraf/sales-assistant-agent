@@ -16,6 +16,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import MessagesState
+from pydantic import ValidationError
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
@@ -33,6 +34,7 @@ from sales_assistant.config import (
     BROCHURES_DIR,
     CACHE_DIR,
     EXPECTED_DATA,
+    FLOTATION_CSV,
     SERVICE_REPORTS_DIR,
     Settings,
     load_settings,
@@ -42,6 +44,14 @@ from sales_assistant.cost_estimate import (
     PartNeed,
     describe_estimate,
     estimate_visit,
+)
+from sales_assistant.flotation import (
+    FlotationError,
+    PlantHistory,
+    Readings,
+    assess_readings,
+    describe_assessment,
+    load_history,
 )
 from sales_assistant.graph import MAX_GRAPH_STEPS, Agent, build_agent
 from sales_assistant.llm import chat_model, form_filler
@@ -69,7 +79,7 @@ from sales_assistant.service_records import (
     save_records,
     write_records,
 )
-from sales_assistant.tools import make_cost_tool, make_search_tool
+from sales_assistant.tools import make_cost_tool, make_flotation_tool, make_search_tool
 from sales_assistant.tracing import langfuse_problem, tracing_config
 
 APP_HELP = "Sales assistant for Metso field sales: products, service costs, flotation data."
@@ -229,6 +239,21 @@ def estimate(
 
 
 @app.command()
+def assess(
+    iron: Annotated[float, typer.Argument(help="Iron in the concentrate, in percent.")],
+    silica: Annotated[float, typer.Argument(help="Silica in the concentrate, in percent.")],
+) -> None:
+    """Show how the flotation tool sets readings against the plant data, without the model."""
+    history = _load_plant_history(load_settings())
+    try:
+        readings = Readings(iron_pct=iron, silica_pct=silica)
+    except ValidationError as error:
+        console.print(Text("Readings must be percentages between 0 and 100.", style="red"))
+        raise typer.Exit(code=1) from error
+    console.print(Text(describe_assessment(assess_readings(history, readings))))
+
+
+@app.command()
 def ask(question: Annotated[str, typer.Argument(help="The question, in plain words.")]) -> None:
     """Ask one question; see each tool the agent uses, then its answer."""
     settings = load_settings()
@@ -243,7 +268,9 @@ def chat() -> None:
     settings = load_settings()
     agent = _load_agent(settings)
     config = _conversation_config(settings, "chat")
-    console.print("Ask about Metso products or service costs. Type exit to leave.")
+    console.print(
+        "Ask about Metso products, service costs or flotation readings. Type exit to leave."
+    )
     while True:
         try:
             question = console.input("[bold]you>[/] ").strip()
@@ -332,8 +359,21 @@ def _load_agent(settings: Settings) -> Agent:
     except (BrochureError, RecordError) as error:
         console.print(f"[red]{error}[/]")
         raise typer.Exit(code=1) from error
-    tools = [make_search_tool(PageIndex(pages)), make_cost_tool(records)]
+    tools = [
+        make_search_tool(PageIndex(pages)),
+        make_cost_tool(records),
+        make_flotation_tool(_load_plant_history(settings)),
+    ]
     return build_agent(chat_model(settings), tools, system_prompt(cards), InMemorySaver())
+
+
+def _load_plant_history(settings: Settings) -> PlantHistory:
+    """Read the flotation plant's data, or exit saying what is missing."""
+    try:
+        return load_history(settings.data_dir / FLOTATION_CSV)
+    except FlotationError as error:
+        console.print(f"[red]{error}[/]")
+        raise typer.Exit(code=1) from error
 
 
 def _conversation_config(settings: Settings, name: str) -> RunnableConfig:
