@@ -47,14 +47,9 @@ tool, and it says so when the answer is not in its data.
 
 - [x] Compare flotation readings with plant history
 
-### 4. Evaluation
+### 4. Documentation
 
-- [ ] Check routing and grounding on fixed scenarios
-- [ ] Fix what the scenario run showed
-
-### 5. Documentation
-
-- [ ] Document the design, data findings and limits
+- [x] Document the design, data findings and limits
 - [ ] Add sample runs of the three brief prompts
 
 ## Decisions
@@ -99,6 +94,7 @@ tool, and it says so when the answer is not in its data.
 | 18 Oct | The flotation text states the verdict's number ("worse than 76% of the plant's hours"), and the prompt asks to lead with whether readings are typical for that plant | The first live answer called 3.1% silica "not unusual" and turned "24% of hours were this bad" round awkwardly; code now does that flip |
 | 18 Oct | The prompt's product list marks brochure names as code: `columncell` (2024) | The model once passed "columncell (2024)" whole as a brochure name; the search refused it, and the retry cost a model call |
 | 18 Oct | Flotation suggestions come from products that act on the measurements the tool reports | Runs of demo prompt 3 suggested CellStation (level and air control, where the data points) or ColumnCell (fine particles, which the data never mentions) |
+| 18 Oct | No fixed set of test questions run against the model: the brief's three prompts ran on both models, and the edge cases were checked by hand | The brief asks for a small, working agent; a test set pays off when prompts keep changing. Unit tests still cover all the code, in CI |
 
 ## Limits and scale-up
 
@@ -120,6 +116,10 @@ Out of scope for this assignment, noted as they come up, with what would change.
   and send flagged records to a review queue.
 - **Fine-tuning:** not worth it for 50 reports. At high volume, the corrections made in the
   review queue could train a smaller, cheaper model to read reports.
+- **Testing the agent:** the brief's three prompts ran on two models, and a question
+  missing details and a follow-up were checked by hand. A larger system would keep a fixed
+  set of questions with the tools and facts each answer needs, run on every prompt change,
+  for example as Langfuse experiments.
 - **One model for everything:** one setting names the model for ingest and for answers.
   Ingest reads each document once, so a stronger model there costs little and every answer
   gains from its reading; answers run on every question, where a smaller model keeps the
