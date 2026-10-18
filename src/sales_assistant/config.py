@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 ENV_FILE = Path(".env")
 CACHE_DIR = Path(".cache")
 DEFAULT_DATA_DIR = "data"
-DEFAULT_OPENAI_MODEL = "gpt-6-luna"
+DEFAULT_OPENAI_MODEL = "gpt-6.1-sol"
 
 BROCHURES_DIR = "brochures"
 SERVICE_REPORTS_DIR = "HistoricalServices"

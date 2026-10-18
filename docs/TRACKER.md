@@ -50,7 +50,7 @@ tool, and it says so when the answer is not in its data.
 ### 4. Documentation
 
 - [x] Document the design, data findings and limits
-- [ ] Add sample runs of the three brief prompts
+- [x] Add sample runs and make gpt-6.1-sol the default
 
 ## Decisions
 
@@ -95,6 +95,7 @@ tool, and it says so when the answer is not in its data.
 | 18 Oct | The prompt's product list marks brochure names as code: `columncell` (2024) | The model once passed "columncell (2024)" whole as a brochure name; the search refused it, and the retry cost a model call |
 | 18 Oct | Flotation suggestions come from products that act on the measurements the tool reports | Runs of demo prompt 3 suggested CellStation (level and air control, where the data points) or ColumnCell (fine particles, which the data never mentions) |
 | 18 Oct | No fixed set of test questions run against the model: the brief's three prompts ran on both models, and the edge cases were checked by hand | The brief asks for a small, working agent; a test set pays off when prompts keep changing. Unit tests still cover all the code, in CI |
+| 18 Oct | gpt-6.1-sol is the default, for ingest and answers | On the brief's three prompts it used fewer tokens at the same speed and kept every share the right way round, where gpt-6-luna once turned one around; at ingest it passes the same hand-checked tests and gives the same demo budget. It costs about 12 times as much, under a cent a question ([Models](#models-18-oct)) |
 
 ## Limits and scale-up
 
@@ -120,10 +121,10 @@ Out of scope for this assignment, noted as they come up, with what would change.
   missing details and a follow-up were checked by hand. A larger system would keep a fixed
   set of questions with the tools and facts each answer needs, run on every prompt change,
   for example as Langfuse experiments.
-- **One model for everything:** one setting names the model for ingest and for answers.
-  Ingest reads each document once, so a stronger model there costs little and every answer
-  gains from its reading; answers run on every question, where a smaller model keeps the
-  call fast and cheap. A second setting would split them.
+- **One model for everything:** gpt-6.1-sol does ingest and answers. gpt-6-luna costs about
+  a twelfth as much per answer; at high volume, a second setting could give it the answers
+  once a fixed test set shows they hold up, while ingest, which reads each document once,
+  keeps the stronger model.
 - **Combinations:** the likely range tries every combination of past values (648 for demo
   prompt 2). With thousands of past visits, a random sample of combinations gives the same
   range.
@@ -205,3 +206,29 @@ each with its known answer pages, plus 3 questions in a salesperson's own words.
   shares those words (the answer pages come 6th and 7th).
 - A test on the real brochures fails if fewer than 22 of the 24 find their answer page in
   the top 5, or if demo prompt 1's answer page stops coming first.
+
+### Models (18 Oct)
+
+The brief's three prompts on both models, with the same prepared data (luna's cards and
+records). Calls and tokens come from the CLI; times and costs from Langfuse.
+
+| Demo prompt | gpt-6-luna | gpt-6.1-sol |
+| --- | --- | --- |
+| 1. Larox filters | 2 calls, 6,702 tokens, 10 s, $0.000807 | 2 calls, 4,978 tokens, 9 s, $0.009413 |
+| 2. Chile budget | 2 calls, 4,648 tokens, 8 s, $0.000328 | 2 calls, 4,459 tokens, 9 s, $0.004552 |
+| 3. Flotation | 4 calls, 12,327 tokens, 14 s, $0.000631 | 3 calls, 8,044 tokens, 14 s, $0.007790 |
+
+- Both recommend Filter optimizer and CellStation with cited pages, and give the same budget,
+  which code computes.
+- On prompt 3, luna wrote "3.1% silica was as high as or higher than 24% of hours", turning
+  the tool's share around, and searched ColumnCell before CellStation. In its three runs of
+  prompt 3, sol kept every share the right way round.
+- Ingest on sol: all tests pass, including the nine hand-checked reports and the hand-counted
+  statuses and flags, and demo prompt 2's budget is unchanged. 39 of 1,100 record fields
+  differ from luna's: 15 sites written with or without the country, 19 lists of work types (6 only in
+  order), 3 cost lines classed or described differently, FSR-0049 filed under ColumnCell (it
+  describes a column with a SonicSparger), and FSR-0028's travel read as 13 h from a note
+  whose figures disagree, where luna left it blank. That last one moves a Sweden budget by
+  0.4%.
+- Times are whole seconds, as Langfuse shows them; the commands took 4 to 7 s longer, for
+  start-up and sending the trace.

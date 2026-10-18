@@ -10,7 +10,9 @@ it says so when the answer is not in its data.
 
 ![How the assistant fits together](docs/diagrams/overview.drawio.svg)
 
-Every step, decision, measurement and limit is logged in [docs/TRACKER.md](docs/TRACKER.md).
+Every step, decision, measurement and limit is logged in [docs/TRACKER.md](docs/TRACKER.md),
+and the agent's answers to the brief's three prompts are in
+[docs/sample-runs.md](docs/sample-runs.md).
 
 ## Quick start
 
@@ -85,6 +87,23 @@ plant's hours. It also lists the measurements that moved most with silica. The r
 exact counts; the links are weak (at most 0.22) and may be operators' reactions, and it is
 one plant from 2017, so the agent presents them as associations, not causes.
 
+## Models
+
+The brief's three prompts ran on both models with the same prepared data; times and costs
+come from Langfuse.
+
+| Demo prompt | gpt-6-luna | gpt-6.1-sol (default) |
+| --- | --- | --- |
+| 1. Larox filters | 2 calls, 6,702 tokens, 10 s, $0.0008 | 2 calls, 4,978 tokens, 9 s, $0.0094 |
+| 2. Chile budget | 2 calls, 4,648 tokens, 8 s, $0.0003 | 2 calls, 4,459 tokens, 9 s, $0.0046 |
+| 3. Flotation | 4 calls, 12,327 tokens, 14 s, $0.0006 | 3 calls, 8,044 tokens, 14 s, $0.0078 |
+
+Both gave the same recommendations and the same budget, which code computes. On prompt 3,
+luna once turned a share around ("3.1% silica was as high as or higher than 24% of hours")
+and made one more search; sol kept every share the right way round in all its runs. Sol costs
+about 12 times as much, still under a cent a question, and at ingest it passes the same
+hand-checked tests as luna, so it is the default for both.
+
 ## What the data contained
 
 - **Brochures:** the provided text versions flatten spec tables, so the PDFs are read again
@@ -109,8 +128,9 @@ one plant from 2017, so the agent presents them as associations, not causes.
 - **Testing:** a fixed set of questions with the tools and facts each answer needs, run on
   every prompt change. Here, the demo prompts ran on two models and edge cases were
   checked by hand.
-- **Models:** ingest reads each document once, so a stronger model there costs little;
-  answers run on every question, where a smaller one is faster and cheaper.
+- **Models:** luna costs about a twelfth as much per answer. At high volume it could take the
+  answers once a fixed test set shows they hold up; ingest, which reads each document once,
+  keeps the stronger model.
 - **Users and data:** built for Metso's staff, so it shows internal costs; a public version
   needs sign-in and guardrails. The customer's own plant data would sharpen flotation answers.
 
@@ -119,7 +139,7 @@ one plant from 2017, so the agent presents them as associations, not causes.
 I built this with Claude Code in VS Code, which drafted the plan, code, tests and docs. I
 chose each design from the options it laid out, reviewed every commit, and ran and checked
 every live model call; those checks caught real errors, such as visits marked as weekend
-work from their dates alone. In the assistant, OpenAI models (gpt-6-luna by default) write
+work from their dates alone. In the assistant, OpenAI models (gpt-6.1-sol by default) write
 the cards, read the reports and answer; code does every search, sum and statistic.
 
 ## Tracing (optional)
