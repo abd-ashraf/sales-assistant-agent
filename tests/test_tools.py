@@ -6,7 +6,8 @@ from langchain_core.messages import ToolMessage
 
 from sales_assistant.brochures import Page
 from sales_assistant.search import PageIndex
-from sales_assistant.tools import make_search_tool
+from sales_assistant.tools import make_cost_tool, make_search_tool
+from tests.samples import make_record
 
 PAGES = [
     Page("larox-pf-ds", 2, 2025, "Chambers 8 10 12"),
@@ -51,3 +52,23 @@ def test_search_says_when_no_page_matches() -> None:
 
     assert message.text == "No page shares a word with this query."
     assert message.artifact == []
+
+
+def test_cost_tool_returns_the_estimate_and_the_reports_behind_it() -> None:
+    record = make_record("FSR-0027", labour_rate=78, travel_rate=62, travel_hours=4.9)
+    cost_tool = make_cost_tool([record])
+    args = {
+        "equipment": "larox_pf_ds",
+        "job_type": "filter_cloth_replacement",
+        "country": "Sweden",
+        "parts": [{"name": "filter cloth", "quantity": 12}],
+    }
+
+    message = cost_tool.invoke(
+        {"type": "tool_call", "name": cost_tool.name, "args": args, "id": "1"}
+    )
+
+    assert isinstance(message, ToolMessage)
+    assert message.text.startswith("Service cost estimate in EUR")
+    assert "Typical total: 928." in message.text
+    assert message.artifact == ["FSR-0027"]

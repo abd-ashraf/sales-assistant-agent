@@ -107,15 +107,18 @@ class ReportReading(BaseModel):
     )
     cost_lines: list[CostLine] = Field(
         description="The rows of the cost table that charge for something; leave out "
-        "subtotal, VAT and total rows."
+        "subtotal, VAT and total rows. Empty if the report has no cost table."
     )
     total: float | None = Field(
         description="The final total the report states, the amount due, VAT included if the "
         "report adds VAT; null if none is stated."
     )
     vat: float | None = Field(description="The VAT amount the report adds; null if none.")
-    weekend: bool = Field(description="True if the visit was at a weekend.")
-    emergency: bool = Field(description="True if it was an emergency call-out.")
+    weekend: bool = Field(
+        description="True only if the report says the visit was at a weekend or charges a "
+        "weekend rate; never work it out from the date."
+    )
+    emergency: bool = Field(description="True only if the report calls it an emergency.")
     customer_parts: bool = Field(description="True if the customer supplied the parts used.")
 
 
@@ -193,6 +196,9 @@ def write_records(
 
 def check_reading(report_id: str, reading: ReportReading) -> ServiceRecord:
     """Work out the cost figures from a reading, and flag what does not add up or is unclear."""
+    # A line without a single number charges nothing, as in "total as per agreement + travel".
+    charged = [line for line in reading.cost_lines if _has_a_number(line)]
+    reading = reading.model_copy(update={"cost_lines": charged})
     total_ex_vat = None if reading.total is None else round(reading.total - (reading.vat or 0), 2)
     cost_status = _cost_status(reading)
     currency_assumed = reading.currency is None and cost_status != CostStatus.NOT_STATED
@@ -230,6 +236,10 @@ def load_records(path: Path) -> list[ServiceRecord]:
             f"The service records at {path} are in an older format: "
             "run `sales-assistant ingest --rewrite`"
         ) from error
+
+
+def _has_a_number(line: CostLine) -> bool:
+    return any(value is not None for value in (line.quantity, line.unit_price, line.amount))
 
 
 def _cost_status(reading: ReportReading) -> CostStatus:

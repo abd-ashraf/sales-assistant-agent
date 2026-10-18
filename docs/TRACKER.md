@@ -41,7 +41,7 @@ tool, and it says so when the answer is not in its data.
 ### 2. Service costs
 
 - [x] Turn service reports into checked records
-- [ ] Estimate service visits from past reports
+- [x] Estimate service visits from past reports
 
 ### 3. Flotation data (optional part)
 
@@ -83,6 +83,13 @@ tool, and it says so when the answer is not in its data.
 | 18 Oct | A cost that names no currency, such as "$2,540", is read as US dollars by a rule in code, and flagged | The model rightly left "$" blank, since it could be any dollar. The three such reports come from Russia, Peru and Zambia, and the Peru and Zambia reports that name a currency use USD; one visible, tested rule replaces a guess |
 | 18 Oct | Hours are taken only as stated: "about 8.4" is 8.4 and "11-12h" is 11.5; unclear hours and one-way travel stay blank | The first run's yes/no for approximate hours was inconsistent ("about 14.1" marked, "about 8.4" not), and one note's one-way travel time was read as the whole trip |
 | 18 Oct | The form's examples are made up, never copied from the reports | Two examples had been copied from hand-checked reports (FSR-0016, FSR-0035), so their test could pass by copying; with made-up phrases, a pass shows the rule itself works |
+| 18 Oct | A budget is built from pieces: hours on site from past jobs of the same kind on the same equipment, labour and travel from the same country, part prices from past invoices | No past visit matches a new one: demo prompt 2 has no PF-DS cloth job in Chile, and only 3 of the 6 PF-DS cloth jobs state a total, in three currencies. Hours depend on the job and rates on the country, so pieces can be combined |
+| 18 Oct | Typical figure = the middle value of each piece; likely range = the middle 80% of every combination of past values | The median is not pulled by one long job (14.2 h). For demo prompt 2 the range is USD 1,759 to 3,072 from 648 combinations; the extremes (1,330 to 3,820) would assume every piece cheapest, or dearest, at once |
+| 18 Oct | Weekend and emergency visits are left out, and "weekend" means only what a report says | They carry surcharges (FSR-0019: CAD 185/h against 120 to 140). The first reading had marked 10 more visits as weekend from their dates, though none said so or charged it |
+| 18 Oct | A piece the reports lack is named, never filled: no total without labour and travel | The brief asks to say clearly what is not in the data; Russia and South Africa have no itemized rates |
+| 18 Oct | Prices converted with a fixed table of 2024 averages, named in every answer; the answer uses the currency of the country's own reports | Reproducible and testable without a rates service; Chile's reports are in USD |
+| 18 Oct | The model chooses the inputs; code does every sum, and the tool's text carries each total ready-made | The model reads numbers and never adds them up |
+| 18 Oct | A cost line without a single number is dropped | One re-read turned "Cost: total as per agreement + travel" (FSR-0030) into two empty lines, which made it look like a cut-off table with an assumed currency; the hand-counted tests caught it |
 
 ## Limits and scale-up
 
@@ -104,6 +111,21 @@ Out of scope for this assignment, noted as they come up, with what would change.
   and send flagged records to a review queue.
 - **Fine-tuning:** not worth it for 50 reports. At high volume, the corrections made in the
   review queue could train a smaller, cheaper model to read reports.
+- **Combinations:** the likely range tries every combination of past values (648 for demo
+  prompt 2). With thousands of past visits, a random sample of combinations gives the same
+  range.
+- **Exchange rates:** a fixed table of 2024 averages. A live system would take them from
+  the finance system on the visit's date.
+- **Thin data:** a piece from one report (Peru's rates) is warned about. More visits per
+  country, or rates from a price list, would make such estimates firmer.
+- **Job types are generous:** a record lists every kind of work its visit touched, so "same
+  kind of job" means "included that work". Job codes from a field-service system would be
+  sharper.
+- **Two notes name only a city** (FSR-0036 Arequipa, FSR-0038 Rustenburg), so their country
+  is blank and their travel times unused. A site list would fill it in.
+- **Saved records:** each record keeps the model's reading together with what code worked
+  out from it, so a change to the checks means reading the reports again. Saving only the
+  reading, and working the rest out on load, would avoid those calls.
 - **New equipment or job types:** each fixed list needs one more line; until then, new
   equipment is filed as `other`.
 - **Memory:** chats live in memory and end with the session; production would keep them in

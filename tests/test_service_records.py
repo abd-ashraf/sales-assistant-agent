@@ -25,37 +25,9 @@ from sales_assistant.service_records import (
     save_records,
     write_records,
 )
+from tests.samples import LINES, make_reading
 
 REAL_RECORDS = Path(__file__).parents[1] / ".cache" / RECORDS_FILE
-
-LINES = [
-    CostLine(description="Travel", kind=LineKind.TRAVEL, quantity=4.9, unit_price=62, amount=303.8),
-    CostLine(description="Labour", kind=LineKind.LABOUR, quantity=8.4, unit_price=78, amount=655.2),
-    CostLine(description="Cloths", kind=LineKind.PART, quantity=12, unit_price=98, amount=1176),
-]
-
-
-def make_reading(**changes: Any) -> ReportReading:
-    """A clean, itemized reading of a filter cloth job; a test changes what it needs."""
-    fields: dict[str, Any] = {
-        "customer": "Boliden AB",
-        "site": "Aitik",
-        "country": "Sweden",
-        "visit_date": "2023-05-12",
-        "equipment": Equipment.LAROX_PF_DS,
-        "job_types": [JobType.FILTER_CLOTH_REPLACEMENT],
-        "on_site_hours": 8.4,
-        "travel_hours": 4.9,
-        "task_hours": [2.75, 5.65],
-        "currency": "EUR",
-        "cost_lines": LINES,
-        "total": 2135.0,
-        "vat": None,
-        "weekend": False,
-        "emergency": False,
-        "customer_parts": False,
-    }
-    return ReportReading(**(fields | changes))
 
 
 def test_check_reading_takes_the_rates_and_total_of_a_clean_report_and_flags_nothing() -> None:
@@ -117,6 +89,22 @@ def test_a_cost_that_names_no_currency_is_read_as_us_dollars_and_flagged() -> No
 
     assert record.currency == "USD"
     assert record.flags == [Flag.CURRENCY_ASSUMED]
+
+
+def test_a_cost_line_without_a_single_number_is_dropped() -> None:
+    empty = CostLine(
+        description="as per agreement",
+        kind=LineKind.LABOUR,
+        quantity=None,
+        unit_price=None,
+        amount=None,
+    )
+    reading = make_reading(cost_lines=[empty], total=None, currency=None)
+
+    record = check_reading("FSR-0030", reading)
+
+    assert record.cost_lines == []
+    assert (record.cost_status, record.currency, record.flags) == ("not_stated", None, [])
 
 
 def test_a_report_without_a_cost_gets_no_currency() -> None:
@@ -359,6 +347,17 @@ def test_real_records_flag_exactly_the_reports_found_by_hand(
     assert {record.report_id for record in real_records.values() if flag in record.flags} == (
         report_ids
     )
+
+
+def test_real_records_mark_weekends_and_emergencies_only_where_the_reports_say_so(
+    real_records: dict[str, ServiceRecord],
+) -> None:
+    weekends = {record.report_id for record in real_records.values() if record.weekend}
+    emergencies = {record.report_id for record in real_records.values() if record.emergency}
+
+    # Ten more visits fall on a Saturday or Sunday, but their reports neither say so nor charge it.
+    assert weekends == {"FSR-0019", "FSR-0022"}
+    assert emergencies == {"FSR-0011", "FSR-0013", "FSR-0042"}
 
 
 def test_real_records_file_every_pf_ds_cloth_change_under_that_job(

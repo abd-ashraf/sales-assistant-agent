@@ -37,6 +37,12 @@ from sales_assistant.config import (
     Settings,
     load_settings,
 )
+from sales_assistant.cost_estimate import (
+    CostQuestion,
+    PartNeed,
+    describe_estimate,
+    estimate_visit,
+)
 from sales_assistant.graph import MAX_GRAPH_STEPS, Agent, build_agent
 from sales_assistant.llm import chat_model, form_filler
 from sales_assistant.product_cards import (
@@ -52,7 +58,9 @@ from sales_assistant.search import PageIndex, best_line
 from sales_assistant.service_records import (
     RECORDS_FILE,
     CostStatus,
+    Equipment,
     Flag,
+    JobType,
     RecordError,
     ReportReading,
     ServiceRecord,
@@ -61,7 +69,7 @@ from sales_assistant.service_records import (
     save_records,
     write_records,
 )
-from sales_assistant.tools import make_search_tool
+from sales_assistant.tools import make_cost_tool, make_search_tool
 from sales_assistant.tracing import langfuse_problem, tracing_config
 
 APP_HELP = "Sales assistant for Metso field sales: products, service costs, flotation data."
@@ -200,6 +208,27 @@ def search(
 
 
 @app.command()
+def estimate(
+    equipment: Annotated[Equipment, typer.Argument(help="The equipment to service.")],
+    job_type: Annotated[JobType, typer.Argument(help="The kind of work.")],
+    country: Annotated[str, typer.Argument(help="The site's country, in English.")],
+    part: Annotated[
+        str | None, typer.Option(help="A part the job needs, such as 'filter cloth'.")
+    ] = None,
+    quantity: Annotated[float, typer.Option(help="How many of the part.")] = 1,
+) -> None:
+    """Show the cost estimate the agent's tool gives, without calling the model."""
+    try:
+        records = load_records(CACHE_DIR / RECORDS_FILE)
+    except RecordError as error:
+        console.print(f"[red]{error}[/]")
+        raise typer.Exit(code=1) from error
+    parts = [PartNeed(name=part, quantity=quantity)] if part else []
+    question = CostQuestion(equipment=equipment, job_type=job_type, country=country, parts=parts)
+    console.print(Text(describe_estimate(estimate_visit(records, question))))
+
+
+@app.command()
 def ask(question: Annotated[str, typer.Argument(help="The question, in plain words.")]) -> None:
     """Ask one question; see each tool the agent uses, then its answer."""
     settings = load_settings()
@@ -214,7 +243,7 @@ def chat() -> None:
     settings = load_settings()
     agent = _load_agent(settings)
     config = _conversation_config(settings, "chat")
-    console.print("Ask about Metso products. Type exit to leave.")
+    console.print("Ask about Metso products or service costs. Type exit to leave.")
     while True:
         try:
             question = console.input("[bold]you>[/] ").strip()
@@ -299,10 +328,11 @@ def _load_agent(settings: Settings) -> Agent:
     try:
         pages = load_pages(CACHE_DIR / PAGES_FILE)
         cards = load_cards(CACHE_DIR / CARDS_FILE)
-    except BrochureError as error:
+        records = load_records(CACHE_DIR / RECORDS_FILE)
+    except (BrochureError, RecordError) as error:
         console.print(f"[red]{error}[/]")
         raise typer.Exit(code=1) from error
-    tools = [make_search_tool(PageIndex(pages))]
+    tools = [make_search_tool(PageIndex(pages)), make_cost_tool(records)]
     return build_agent(chat_model(settings), tools, system_prompt(cards), InMemorySaver())
 
 
@@ -358,7 +388,8 @@ def _print_step(message: BaseMessage) -> None:
             arguments = ", ".join(f"{name}={value!r}" for name, value in call["args"].items())
             console.print(Text(f"  → {call['name']}({arguments})", style="dim"))
     elif isinstance(message, ToolMessage):
-        found = ", ".join(message.artifact or []) or message.text
+        # With no sources to list, the result's first line says what happened.
+        found = ", ".join(message.artifact or []) or message.text.partition("\n")[0]
         console.print(Text(f"    ← {found}", style="dim"))
 
 

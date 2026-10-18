@@ -20,6 +20,7 @@ from sales_assistant.service_records import (
     JobType,
     ReportReading,
     load_records,
+    save_records,
 )
 from tests.fakes import (
     ScriptedChatModel,
@@ -28,6 +29,7 @@ from tests.fakes import (
     scripted_model,
     tool_call,
 )
+from tests.samples import make_record
 
 runner = CliRunner()
 LANGFUSE_URL = "http://localhost:3000"
@@ -87,10 +89,12 @@ def reading(customer: str) -> AIMessage:
 
 @pytest.fixture(name="prepared")
 def fixture_prepared(workdir: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A working directory with one page and its product card prepared, and a key set."""
+    """A working directory with a page, its product card and a service record, and a key set."""
     save_pages([Page("larox-pf-ds", 2, 2025, "Chambers 8 10 12")], workdir / ".cache" / PAGES_FILE)
     card = ProductCard("larox-pf-ds", 2025, "Larox PF-DS", "tower press filter", "Filters.")
     save_cards([card], workdir / ".cache" / CARDS_FILE)
+    record = make_record("FSR-0027", labour_rate=78, travel_rate=62, travel_hours=4.9)
+    save_records([record], workdir / ".cache" / RECORDS_FILE)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     return workdir
 
@@ -349,3 +353,53 @@ def test_chat_traces_each_turn_under_one_langfuse_session(monkeypatch: pytest.Mo
     assert {turn["langfuse_trace_name"] for turn in recorder.turns} == {"chat"}
     chat_thread = recorder.turns[0]["thread_id"]
     assert {turn["langfuse_session_id"] for turn in recorder.turns} == {chat_thread}
+
+
+def test_ask_asks_for_ingest_when_the_service_records_are_missing(prepared: Path) -> None:
+    (prepared / ".cache" / RECORDS_FILE).unlink()
+
+    result = runner.invoke(app, ["ask", "What should I budget?"])
+
+    assert result.exit_code == 1
+    assert "No service records" in result.output
+
+
+@pytest.mark.usefixtures("prepared")
+def test_ask_shows_the_cost_tool_call_and_the_reports_behind_the_estimate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    estimate = tool_call(
+        "estimate_service_cost",
+        equipment="larox_pf_ds",
+        job_type="filter_cloth_replacement",
+        country="Sweden",
+        parts=[],
+    )
+    use_model(monkeypatch, scripted_model(estimate, "Budget about EUR 960 [FSR-0027]."))
+
+    result = runner.invoke(app, ["ask", "What does a cloth change in Sweden cost?"])
+
+    assert result.exit_code == 0
+    assert "→ estimate_service_cost(equipment='larox_pf_ds'" in result.output
+    assert "← FSR-0027" in result.output
+    assert "Budget about EUR 960 [FSR-0027]." in result.output
+
+
+@pytest.mark.usefixtures("prepared")
+def test_estimate_prints_what_the_cost_tool_gives_without_the_model() -> None:
+    result = runner.invoke(
+        app,
+        ["estimate", "larox_pf_ds", "filter_cloth_replacement", "Sweden", "--part", "cloth"],
+    )
+
+    assert result.exit_code == 0
+    assert "Service cost estimate in EUR" in result.output
+    assert "no invoice price for cloth on larox_pf_ds" in result.output
+
+
+@pytest.mark.usefixtures("workdir")
+def test_estimate_asks_for_ingest_when_there_are_no_records() -> None:
+    result = runner.invoke(app, ["estimate", "larox_pf_ds", "filter_cloth_replacement", "Chile"])
+
+    assert result.exit_code == 1
+    assert "No service records" in result.output

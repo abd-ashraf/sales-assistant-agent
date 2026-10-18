@@ -29,6 +29,9 @@ it says so when the answer is not in its data.
   per report, and code checks the sums and hours and flags every gap (a cut-off cost
   table, VAT included, a currency written only as "$") without filling it in. Nine
   reports checked by hand test the extraction.
+- Service visit budgets with `ask` or `chat`: the agent calls `estimate_service_cost`, which
+  builds the budget in code from past visits and returns a typical figure, a likely range
+  and the reports behind each number; `estimate` shows the same without the model.
 
 The full plan, ticked off step by step: [docs/TRACKER.md](docs/TRACKER.md).
 
@@ -50,6 +53,16 @@ model. The CLI prints every tool call, so each routing decision is visible.
 brochure and fills a form per service report, and code checks every form. What the model
 writes is saved, so later runs reuse it, and `ingest --rewrite` writes it again.
 
+## How a cost estimate is built
+
+![How a budget is built](docs/diagrams/cost-estimate.drawio.svg)
+
+No past visit matches a new one exactly, so the budget is built from pieces: hours on site
+from past jobs of the same kind, labour and travel from visits in the same country, and part
+prices from past invoices. The typical figure takes the middle value of each piece; the
+likely range is the middle 80% of every combination of past values. Weekend and emergency
+visits are left out, and a piece the reports lack is named, never filled in.
+
 ## Quick start
 
 Needs [uv](https://docs.astral.sh/uv/), which also installs the right Python version.
@@ -63,6 +76,8 @@ uv run sales-assistant check      # checks the data folder and the key
 uv run sales-assistant ingest     # prepares brochure pages, product cards and service records
 uv run sales-assistant search "filter performance when the feed changes"
 uv run sales-assistant ask "We have Larox pressure filters but performance drops whenever our feed grade changes"
+uv run sales-assistant ask "A customer in Chile needs 12 filter cloths replaced on a Larox PF-DS tower press. What should I budget for the service visit?"
+uv run sales-assistant estimate larox_pf_ds filter_cloth_replacement Chile --part "filter cloth" --quantity 12
 uv run sales-assistant chat       # a conversation; type exit to leave
 ```
 
